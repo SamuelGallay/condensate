@@ -1,0 +1,9 @@
+[package]
+name = "ocl-vkfft"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+num = "0.4.3"
+ocl = "0.19.7"
+ocl-vkfft-sys = { version = "0.1.0", path = "../ocl-vkfft-sys" }

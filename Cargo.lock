@@ -762,6 +762,7 @@ dependencies = [
  "num",
  "ocl",
  "ocl-vkfft",
+ "ocl-vkfft-sys",
  "rand",
 ]
 
@@ -978,6 +979,15 @@ dependencies = [
 
 [[package]]
 name = "ocl-vkfft"
+version = "0.1.0"
+dependencies = [
+ "num",
+ "ocl",
+ "ocl-vkfft-sys",
+]
+
+[[package]]
+name = "ocl-vkfft-sys"
 version = "0.1.0"
 dependencies = [
  "bindgen",

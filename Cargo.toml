@@ -14,7 +14,8 @@ nix = {version = "0.29.0", features = ["signal"]}
 noise = "0.9.0"
 num = "0.4.3"
 ocl = "0.19"
-ocl-vkfft = { path = "ocl-vkfft" }
+ocl-vkfft-sys = { path = "ocl-vkfft/ocl-vkfft-sys" }
+ocl-vkfft = { path = "ocl-vkfft/ocl-vkfft" }
 rand = "0.8.5"
 
 [dev-dependencies]

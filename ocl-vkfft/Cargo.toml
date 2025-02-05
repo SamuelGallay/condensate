@@ -1,11 +1,8 @@
-[package]
-name = "ocl-vkfft"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[build-dependencies]
-bindgen = "0.71.0"
-cc = "1.0"
+members = [
+    "ocl-vkfft",
+    "ocl-vkfft-sys",
+]
 
-[dependencies]
-cl-sys = "0.4.3"
+resolver = "2"
