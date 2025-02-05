@@ -39,10 +39,20 @@ __kernel void rotation(__global float2* phi, __global float2* dx_phi, __global f
     phi2hat[i*N+j].y = 0; 
 }
 
-__kernel void rescale(__global float2* phi, __global float2* phi2hat, int N, float L) {
+__kernel void rescale(__global float2* inphi, __global float2* outphi,  __global float2* diff, __global float2* phi2hat, int N, float L) {
     int i = get_global_id(0);
     int j = get_global_id(1);
     float norm = sqrt(phi2hat[0].x) * L / N;
-    phi[i*N+j].x /= norm;
-    phi[i*N+j].y /= norm;
+    
+    float prevx = outphi[i*N+j].x;
+    float prevy = outphi[i*N+j].y;
+
+    float newx = inphi[i*N+j].x / norm;
+    float newy = inphi[i*N+j].y / norm;
+
+    outphi[i*N+j].x = newx;
+    outphi[i*N+j].y = newy;
+
+    diff[i*N+j].x = (newx-prevx)*(newx-prevx) + (newx-prevy)*(newy-prevy);
+    diff[i*N+j].y = 0;
 }

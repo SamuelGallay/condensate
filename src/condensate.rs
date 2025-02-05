@@ -9,16 +9,43 @@ use crate::utils;
 use anyhow::{anyhow, Result};
 use indicatif::ProgressBar;
 use ocl::ocl_core::ClDeviceIdPtr;
+use ocl::Buffer;
 use ocl_vkfft::{
     VkFFTApplication, VkFFTConfiguration, VkFFTLaunchParams, VkFFTResult_VKFFT_SUCCESS,
 };
+
+use ndarray::Array2;
+use num::complex::Complex32;
+//use std::ffi::c_void;
 use std::process::Command;
 use std::time::Instant;
 use std::time::SystemTime;
 use utils::get_from_gpu;
 use utils::new_buffer;
+//use std::sync::Arc;
+use std::rc::Rc;
 
 const SRC: &str = include_str!("kernels.cl");
+
+pub struct App {
+    // This pointer must never be allowed to leave the struct (LOL)
+    app: VkFFTApplication,
+}
+impl App {
+    pub fn new(config: VkFFTConfiguration) -> Self {
+        let mut vkapp = VkFFTApplication {
+            ..Default::default()
+        };
+        let res = unsafe { ocl_vkfft::initializeVkFFT(&mut vkapp, config) };
+        assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
+
+        App {app:vkapp }
+    }
+
+    pub fn get_ptr(&self) -> *mut ocl_vkfft::VkFFTApplication {
+        return &self.app as *const ocl_vkfft::VkFFTApplication as *mut ocl_vkfft::VkFFTApplication;
+    }
+}
 
 pub struct Parameters {
     pub n: usize,
@@ -34,6 +61,7 @@ pub struct Parameters {
 }
 
 pub fn condensate(p: Parameters) -> Result<()> {
+    ocl_vkfft::say_hello();
     let _ = Command::new("mkdir")
         .args(["-p", "plot", "archive"])
         .spawn()?;
@@ -55,7 +83,9 @@ pub fn condensate(p: Parameters) -> Result<()> {
     println!("Init l2 norm: {}", utils::l2_norm(&phi0, p.dx));
     //let mut phi_back_data = Array2::<Complex32>::zeros((N, N));
 
-    let phi_buffer = new_buffer(&queue, p.n)?;
+    let phi_buffer = Rc::new(new_buffer(&queue, p.n)?);
+    let newphi_buffer = new_buffer(&queue, p.n)?;
+    let diff_buffer = new_buffer(&queue, p.n)?;
     let phi2hat_buffer = new_buffer(&queue, p.n)?;
     let phihat_buffer = new_buffer(&queue, p.n)?;
     let dxphi_buffer = new_buffer(&queue, p.n)?;
@@ -77,14 +107,27 @@ pub fn condensate(p: Parameters) -> Result<()> {
         ..Default::default()
     };
 
-    let mut app = VkFFTApplication {
-        ..Default::default()
-    };
+    let app = App::new(config);
 
-    let res = unsafe { ocl_vkfft::initializeVkFFT(&mut app, config) };
-    assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
-
+    let _launchparams =
+        |in_buffer: Buffer<Complex32>, out_buffer: Buffer<Complex32>| VkFFTLaunchParams {
+            commandQueue: &mut queue.as_ptr(),
+            inputBuffer: &mut in_buffer.as_ptr(),
+            buffer: &mut out_buffer.as_ptr(),
+            ..Default::default()
+        };
     // ------------------------------------------------------------------------- //
+    //let mut launch_phihat = launchparams(phi_buffer.clone(), phihat_buffer.clone());
+    //fn test(buffer: Arc<Buffer<Complex32>>) -> &mut *mut c_void {
+    //    return &mut buffer.clone().as_ptr();
+    //}
+    //let temp = phi_buffer.as_ptr();
+    //fn test(buf: &Rc<Buffer<Complex32>>) -> &mut *mut c_void {
+    //    unsafe {
+    //        return &mut buf.as_ptr();
+    //    }
+    //}
+
     let mut launch_phihat = VkFFTLaunchParams {
         commandQueue: &mut queue.as_ptr(),
         inputBuffer: &mut phi_buffer.as_ptr(),
@@ -125,7 +168,7 @@ pub fn condensate(p: Parameters) -> Result<()> {
     let mut launch_phi = VkFFTLaunchParams {
         commandQueue: &mut queue.as_ptr(),
         inputBuffer: &mut phihat_buffer.as_ptr(),
-        buffer: &mut phi_buffer.as_ptr(),
+        buffer: &mut newphi_buffer.as_ptr(),
         ..Default::default()
     };
 
@@ -136,7 +179,7 @@ pub fn condensate(p: Parameters) -> Result<()> {
             .name("rotation")
             .global_work_size([p.n, p.n])
             .disable_arg_type_check()
-            .arg(&phi_buffer)
+            .arg(&newphi_buffer)
             .arg(&dxphi_buffer)
             .arg(&dyphi_buffer)
             .arg(&phi2hat_buffer)
@@ -162,11 +205,20 @@ pub fn condensate(p: Parameters) -> Result<()> {
             .name("rescale")
             .global_work_size([p.n, p.n])
             .disable_arg_type_check()
-            .arg(&phi_buffer)
+            .arg(&newphi_buffer)
+            .arg(&*phi_buffer)
+            .arg(&diff_buffer)
             .arg(&phi2hat_buffer)
             .arg(p.n as i32)
             .arg(p.length)
             .build()?
+    };
+
+    let mut _launch_diff2 = VkFFTLaunchParams {
+        commandQueue: &mut queue.as_ptr(),
+        inputBuffer: &mut diff_buffer.as_ptr(),
+        buffer: &mut diff_buffer.as_ptr(),
+        ..Default::default()
     };
 
     // ------------------------------------------------------------------------- //
@@ -180,31 +232,56 @@ pub fn condensate(p: Parameters) -> Result<()> {
     let pb = ProgressBar::new(p.niter);
 
     // ------------------------------------------------------------------------- //
+    let mut _cpu_data = Array2::<Complex32>::zeros((p.n, p.n)); // Totally fake
+
+    /*fn safe_append(mut app: VkFFTApplication, i: i32, mut par: VkFFTLaunchParams) {
+        unsafe {
+            let res = ocl_vkfft::VkFFTAppend(&mut app, i, &mut par);
+            assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
+        };
+    }*/
+
     let instant = Instant::now();
     unsafe {
         for _ in 0..p.niter {
-            let res = ocl_vkfft::VkFFTAppend(&mut app, -1, &mut launch_phihat);
+            //safe_append(app, -1, launch_phihat);
+            let res = ocl_vkfft::VkFFTAppend(app.get_ptr(), -1, &mut launch_phihat);
             assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
 
             kernel_diffusion.enq()?;
 
-            let res = ocl_vkfft::VkFFTAppend(&mut app, 1, &mut launch_dxphi);
+            let res = ocl_vkfft::VkFFTAppend(app.get_ptr(), 1, &mut launch_dxphi);
             assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
 
-            let res = ocl_vkfft::VkFFTAppend(&mut app, 1, &mut launch_dyphi);
+            let res = ocl_vkfft::VkFFTAppend(app.get_ptr(), 1, &mut launch_dyphi);
             assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
 
-            let res = ocl_vkfft::VkFFTAppend(&mut app, 1, &mut launch_phi);
+            let res = ocl_vkfft::VkFFTAppend(app.get_ptr(), 1, &mut launch_phi);
             assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
 
             kernel_rotation.enq()?;
 
-            let res = ocl_vkfft::VkFFTAppend(&mut app, -1, &mut launch_phi2hat);
+            let res = ocl_vkfft::VkFFTAppend(app.get_ptr(), -1, &mut launch_phi2hat);
             assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
 
             kernel_rescale.enq()?;
 
+            //let res = ocl_vkfft::VkFFTAppend(&mut app, -1, &mut launch_diff2);
+            //assert_eq!(res, VkFFTResult_VKFFT_SUCCESS);
+
+            //diff_buffer
+            //    .read(cpu_data.as_slice_mut().ok_or(anyhow!("Noo"))?)
+            //    .len(p.n*p.n)
+            //    .queue(&queue)
+            //    .enq()?;
+
             queue.finish()?;
+            //println!(
+            //    "{}",
+            //    utils::l2_norm(&get_from_gpu(&diff_buffer)?, p.dx)
+            //);
+
+            //println!("{}", f32::sqrt(cpu_data[[0, 0]].re) * p.dx);
             pb.inc(1);
         }
     }
@@ -220,7 +297,7 @@ pub fn condensate(p: Parameters) -> Result<()> {
     );
 
     unsafe {
-        ocl_vkfft::deleteVkFFT(&mut app);
+        ocl_vkfft::deleteVkFFT(app.get_ptr());
     }
 
     println!("Exiting main function.");
