@@ -1,8 +1,11 @@
 pub mod condensate;
 pub mod utils;
+pub mod sum;
+pub mod gpu;
 
-use crate::condensate::{condensate, Parameters};
+use crate::condensate::Parameters;
 use clap::Parser;
+use std::process::Command;
 
 #[derive(Parser)]
 struct Cli {
@@ -13,7 +16,7 @@ struct Cli {
     /// The number of iterations
     #[arg(short, long)]
     iter: Option<u64>,
-    
+
     /// The physical size of the domain
     #[arg(short, long)]
     length: Option<f32>,
@@ -36,14 +39,17 @@ struct Cli {
 }
 
 fn main() {
+    Command::new("mkdir")
+        .args(["-p", "plot", "archive"])
+        .spawn().unwrap();
     let cli = Cli::parse();
-    println!("{:?}", cli.n);
+    //println!("{:?}", cli.n);
     let mut p = Parameters {
         n: cli.n.unwrap_or(usize::pow(2, 8)),
         length: cli.length.unwrap_or(40.0),
         omega: cli.omega.unwrap_or(1.3),
         beta: cli.beta.unwrap_or(8000.0),
-        gamma: cli.gamma.unwrap_or( 1.0),
+        gamma: cli.gamma.unwrap_or(1.0),
         cfl: cli.cfl.unwrap_or(1.0),
         niter: cli.iter.unwrap_or(1000),
         dx: 0.0,
@@ -53,9 +59,13 @@ fn main() {
     p.dx = p.length / p.n as f32;
     p.dt = p.cfl * p.dx / p.omega / p.length;
     p.final_time = p.niter as f32 * p.dt;
-
-    match condensate(p) {
+    
+    
+    match condensate::condensate(p) {
         Ok(()) => println!("Program exited successfully."),
         Err(e) => println!("Not working : {e:?}"),
     }
+    
+    
+    //sum::benchmark();
 }

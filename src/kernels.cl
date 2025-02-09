@@ -39,10 +39,11 @@ __kernel void rotation(__global float2* phi, __global float2* dx_phi, __global f
     phi2hat[i*N+j].y = 0; 
 }
 
-__kernel void rescale(__global float2* inphi, __global float2* outphi,  __global float2* diff, __global float2* phi2hat, int N, float L) {
+__kernel void rescale(__global float2* inphi, __global float2* outphi,  __global float2* diff, int N, float dx, float precomputed_norm, __global float2* sum_buffer) {
     int i = get_global_id(0);
     int j = get_global_id(1);
-    float norm = sqrt(phi2hat[0].x) * L / N;
+    float norm = precomputed_norm;
+    //norm = sqrt(sum_buffer[0].x) * dx;
     
     float prevx = outphi[i*N+j].x;
     float prevy = outphi[i*N+j].y;
@@ -55,4 +56,35 @@ __kernel void rescale(__global float2* inphi, __global float2* outphi,  __global
 
     diff[i*N+j].x = (newx-prevx)*(newx-prevx) + (newx-prevy)*(newy-prevy);
     diff[i*N+j].y = 0;
+}
+
+__kernel void sum(__global float2* in_buffer, ulong in_offset, __global float2* out_buffer,  ulong out_offset) {
+    int i = get_global_id(0);
+    out_buffer[out_offset + i] = in_buffer[in_offset + 2*i] + in_buffer[in_offset + 2*i+1];
+}
+
+__kernel void sum_inplace(__global float2* buffer, ulong out_size) {
+    int i = get_global_id(0);
+    buffer[i] += buffer[i + out_size] ;
+}
+
+__kernel void simd(__global float4* buffer, ulong out_size) {
+    int i = get_global_id(0);
+    float4 s = buffer[i];
+    s+= buffer[i + out_size];
+    s+= buffer[i + 2*out_size];
+    s+= buffer[i + 3*out_size];
+    s+= buffer[i + 4*out_size];
+    s+= buffer[i + 5*out_size];
+    s+= buffer[i + 6*out_size];
+    s+= buffer[i + 7*out_size];
+    s+= buffer[i + 8*out_size];
+    s+= buffer[i + 9*out_size];
+    s+= buffer[i + 10*out_size];
+    s+= buffer[i + 11*out_size];
+    s+= buffer[i + 12*out_size];
+    s+= buffer[i + 13*out_size];
+    s+= buffer[i + 14*out_size];
+    s+= buffer[i + 15*out_size];
+    buffer[i] = s;
 }

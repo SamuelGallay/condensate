@@ -95,13 +95,7 @@ pub fn plot_from_gpu(buffer: &Buffer<Complex32>, name: &str) -> Result<()> {
     return Ok(());
 }
 
-pub fn new_buffer(queue: &ocl::Queue, n: usize) -> Result<Buffer<Complex32>> {
-    let buffer = Buffer::<Complex32>::builder()
-        .queue(queue.clone())
-        .len(n * n)
-        .build()?;
-    return Ok(buffer);
-}
+
 
 pub fn l2_norm(a: &Array2<Complex32>, dx: f32) -> f32 {
     let mut s = 0f32;
