@@ -1,5 +1,6 @@
 /target
 archive
+temp
 ocl-vkfft/target
 .direnv
 .envrc

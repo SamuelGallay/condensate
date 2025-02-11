@@ -1,5 +1,6 @@
 extern crate noise;
 
+use crate::array;
 use colorgrad::Gradient;
 use core::f64;
 use image::ImageBuffer;
@@ -8,8 +9,7 @@ use noise::{Fbm, NoiseFn, Perlin};
 use num::complex::{Complex, Complex32, ComplexFloat};
 use num::integer::Roots;
 use ocl::Buffer;
-use crate::array;
-//use ocl::ProQue;
+use rand::Rng;
 use std::f32::consts::PI;
 
 pub fn noise2d(n: usize) -> Array2<Complex32> {
@@ -52,9 +52,7 @@ pub fn fftfreq(n: usize, l: f32) -> Vec<f32> {
 pub fn get_from_gpu(buffer: &Buffer<Complex<f32>>) -> Array2<Complex<f32>> {
     let n = buffer.len().sqrt();
     let mut cpu_data = Array2::<Complex<f32>>::zeros((n, n));
-    buffer
-        .read(cpu_data.as_slice_mut().unwrap())
-        .enq().unwrap();
+    buffer.read(cpu_data.as_slice_mut().unwrap()).enq().unwrap();
     buffer.default_queue().unwrap().finish().unwrap();
     return cpu_data;
 }
@@ -74,7 +72,8 @@ pub fn image_from_array(cpu_data: &Array2<f32>) -> ImageBuffer<image::Rgb<u8>, V
     let normalized = cpu_data.mapv(|x| x / m);
     let grad = colorgrad::GradientBuilder::new()
         .html_colors(&["black", "red", "yellow"])
-        .build::<colorgrad::CatmullRomGradient>().unwrap();
+        .build::<colorgrad::CatmullRomGradient>()
+        .unwrap();
     let imgbuf = image::ImageBuffer::from_fn(n as u32, n as u32, |i, j| {
         let v = grad.at(normalized[[i as usize, j as usize]]).to_rgba8();
         image::Rgb(v[..3].try_into().unwrap())
@@ -92,8 +91,6 @@ pub fn plot_from_gpu(a: &array::Array<Complex32>, name: &str) -> () {
     plot_array(&cpu_data, name);
 }
 
-
-
 pub fn l2_norm(a: &Array2<Complex32>, dx: f32) -> f32 {
     let mut s = 0f32;
     for e in a.iter() {
@@ -103,6 +100,7 @@ pub fn l2_norm(a: &Array2<Complex32>, dx: f32) -> f32 {
 }
 
 pub fn init(n: usize, eps0: f32, l: f32) -> Array2<Complex32> {
+    let mut rng = rand::thread_rng();
     let mut a = Array2::<Complex32>::zeros((n, n));
     let dx = l / (n as f32);
     for i in 0..n {
@@ -113,8 +111,24 @@ pub fn init(n: usize, eps0: f32, l: f32) -> Array2<Complex32> {
                 + 1f32 / f32::sqrt(PI * eps0) * x / l * f32::exp(-(x * x + y * y) / (2.0 * eps0));
             a[[i, j]].im =
                 1f32 / f32::sqrt(PI * eps0) * y / l * f32::exp(-(x * x + y * y) / (2.0 * eps0));
+            a[[i, j]].re *= 1.0 + 0.1 * rng.gen::<f32>();
+            a[[i, j]].im *= 1.0 + 0.1 * rng.gen::<f32>();
         }
     }
     let norm = l2_norm(&a, dx);
     return a / norm;
+}
+
+pub fn vector_field(n: usize, l: f32) -> Array2<Complex32> {
+    let mut a = Array2::<Complex32>::zeros((n, n));
+    let dx = l / (n as f32);
+    for i in 0..n {
+        for j in 0..n {
+            let x = (i as f32) * dx - l / 2.0;
+            let y = (j as f32) * dx - l / 2.0;
+            a[[i, j]].re = x * x + y * y;
+            a[[i, j]].im = 0f32;
+        }
+    }
+    return a;
 }

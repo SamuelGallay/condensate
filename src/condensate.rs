@@ -19,6 +19,7 @@ use std::time::Instant;
 
 const SRC: &str = include_str!("kernels.cl");
 
+#[derive(Debug)]
 pub struct Parameters {
     pub n: usize,
     pub niter: u64,
@@ -51,12 +52,20 @@ pub fn condensate(p: Parameters) -> () {
     //let mut phi_back_data = Array2::<Complex32>::zeros((N, N));
 
     let mut phi = g.new_array(p.n);
-
     phi.buffer
         .write(phi0.as_slice().unwrap())
         .queue(&g.queue)
         .enq()
         .unwrap();
+
+    let vector_field = g.new_array(p.n);
+    vector_field
+        .buffer
+        .write(utils::vector_field(p.n, p.length).as_slice().unwrap())
+        .queue(&g.queue)
+        .enq()
+        .unwrap();
+
     let mut s = Complex32::new(0.0, 0.0);
     for i in 0..p.n {
         for j in 0..p.n {
@@ -102,6 +111,7 @@ pub fn condensate(p: Parameters) -> () {
             kernel("scal")
                 .arg(&a.buffer)
                 .arg(&b.buffer)
+                .arg(&out.buffer)
                 .arg(p.n)
                 .build()
                 .unwrap()
@@ -169,6 +179,7 @@ pub fn condensate(p: Parameters) -> () {
         unsafe {
             kernel("hphif")
                 .arg(&phi.buffer)
+                .arg(&f.buffer)
                 .arg(&dxf.buffer)
                 .arg(&dyf.buffer)
                 .arg(&lapf.buffer)
@@ -186,6 +197,53 @@ pub fn condensate(p: Parameters) -> () {
         return out;
     };
 
+    let differentiate = |f: &Array<'_, Complex32>| -> (
+        Array<'_, Complex32>,
+        Array<'_, Complex32>,
+        Array<'_, Complex32>,
+    ) {
+        let fhat = g.new_array(p.n);
+        builder.fft(&f.buffer, &fhat.buffer, -1);
+
+        let dxf = g.new_array(p.n);
+        let dyf = g.new_array(p.n);
+        let lapf = g.new_array(p.n);
+        unsafe {
+            kernel("differentiate")
+                .arg(&fhat.buffer)
+                .arg(&dxf.buffer)
+                .arg(&dyf.buffer)
+                .arg(&lapf.buffer)
+                .arg(p.length)
+                .arg(p.n)
+                .build()
+                .unwrap()
+                .enq()
+                .unwrap();
+        }
+        g.queue.finish().unwrap();
+        builder.fft(&dxf.buffer, &dxf.buffer, 1);
+        builder.fft(&dyf.buffer, &dyf.buffer, 1);
+        builder.fft(&lapf.buffer, &lapf.buffer, 1);
+
+        return (dxf, dyf, lapf);
+    };
+
+    let invamlap2 = |fhat: &Array<'_, Complex32>, a: f32| -> () {
+        unsafe {
+            kernel("invamlap2")
+                .arg(&fhat.buffer)
+                .arg(a)
+                .arg(p.length)
+                .arg(p.n)
+                .build()
+                .unwrap()
+                .enq()
+                .unwrap();
+        }
+        g.queue.finish().unwrap();
+    };
+
     let hess = |phi: &Array<'_, Complex32>,
                 f: &Array<'_, Complex32>,
                 dxf: &Array<'_, Complex32>,
@@ -196,6 +254,9 @@ pub fn condensate(p: Parameters) -> () {
             * (scal(f, &hphif(phi, f, dxf, dyf, lapf))
                 + p.beta * scal(&(phi.clone() * phi), &(f.clone() * f)));
     };
+    let norm2 = |phi: Array<'_, Complex32>| -> f32 {
+        return f32::sqrt(phi.abs_squared().sum().re * p.dx * p.dx);
+    };
 
     // ------------------------------------------------------------------------- //
 
@@ -205,74 +266,92 @@ pub fn condensate(p: Parameters) -> () {
 
     let instant = Instant::now();
     let mut k = 0;
-    let energy_decrease = -200f32;
-    let precision = 10f32.powf(-7.0);
-    //let theta0 = 0.1;
-    //let mut theta = theta0;
-    //let mut divisions = 0;
+    let mut energy_delta = -200f32;
+    let precision = -100f32; //10f32.powf(-15.0);
+    let theta0 = 0.1;
+    let mut theta = theta0;
+    let mut divisions = 0;
+    let mut rnm1 = phi.clone();
+    let mut p_times_rnm1 = phi.clone();
+    let mut pnm1 = phi.clone();
 
-    unsafe {
-        while k < p.niter && energy_decrease < -precision {
-            k += 1;
+    while k < p.niter && energy_delta < -precision {
+        k += 1;
 
-            let phihat = g.new_array(p.n);
-            builder.fft(&phi.buffer, &phihat.buffer, -1);
+        let (dxphi, dyphi, lapphi) = differentiate(&phi);
+        let hphi = hphif(&phi, &phi, &dxphi, &dyphi, &lapphi);
+        let e = energy(&phi, &dxphi, &dyphi);
+        let a = alpha(&phi, &dxphi, &dyphi);
+        let lambdan = scal(&hphi, &phi);
+        let r = phi.clone() * (-lambdan) + &hphi;
 
-            kernel("diffusion")
-                .arg(&phihat.buffer)
-                .arg(p.n)
-                .arg(p.length)
-                .arg(p.dt)
-                .build()
-                .unwrap()
-                .enq()
-                .unwrap();
-
-            let lapphi = g.new_array(p.n);
-            let dxphi = g.new_array(p.n);
-            let dyphi = g.new_array(p.n);
-            kernel("differentiate")
-                .arg(&phihat.buffer)
-                .arg(&dxphi.buffer)
-                .arg(&dyphi.buffer)
-                .arg(&lapphi.buffer)
-                .arg(p.n)
-                .arg(p.length)
-                .arg(p.dt)
-                .build()
-                .unwrap()
-                .enq()
-                .unwrap();
-            builder.fft(&dxphi.buffer, &dxphi.buffer, 1);
-            builder.fft(&dyphi.buffer, &dyphi.buffer, 1);
-            println!("Energy : {}", energy(&phi, &dxphi, &dyphi));
-
-            let newphi = g.new_array(p.n);
-            builder.fft(&phihat.buffer, &newphi.buffer, 1);
-
-            //let phi2hat = g.new_array(p.n);
-            kernel("rotation")
-                .arg(&newphi.buffer)
-                .arg(&dxphi.buffer)
-                .arg(&dyphi.buffer)
-                .arg(p.n)
-                .arg(p.length)
-                .arg(p.omega)
-                .arg(p.beta)
-                .arg(p.dt)
-                .build()
-                .unwrap()
-                .enq()
-                .unwrap();
-
-            let phi_squared = newphi.clone().norm2();
-            let norm = phi_squared.sum().re.sqrt() * p.dx;
-            phi = newphi * Complex32::new(1.0 / norm, 0.0);
-
-            g.queue.finish().unwrap();
-            //pb.inc(1);
+        let prec = (phi.clone().abs_squared() * p.beta + &vector_field + a).inv_sqrt();
+        
+        let temphat = g.new_array(p.n);
+        builder.fft(&(r.clone() * &prec).buffer, &temphat.buffer, -1);
+        invamlap2(&temphat, a);
+        let p_times_rn = g.new_array(p.n);
+        builder.fft(&temphat.buffer, &p_times_rn.buffer, 1);
+        let p_times_rn = p_times_rn * &prec;
+        
+        let mut mybeta = f32::max(
+            0.0,
+            scal(&(r.clone() + &(rnm1.clone() * -1.0)), &p_times_rn) / scal(&rnm1, &p_times_rnm1),
+        );
+        if k == 1 {
+            mybeta = 0f32;
         }
+        
+        let descent_direction = p_times_rn.clone() * -1.0  + &(pnm1 * mybeta);
+        let temp_scal = -scal(&descent_direction, &phi);
+
+        // p := proj_descent_direction
+        let p = descent_direction + &(phi.clone() * temp_scal);
+
+        // Def previous variables
+        rnm1 = r;
+        p_times_rnm1 = p_times_rn;
+        pnm1 = p.clone();
+
+        let (dxp, dyp, lapp) = differentiate(&p);
+        let temp_hess = hess(&phi, &p, &dxp, &dyp, &lapp);
+        let normp = norm2(p.clone());
+        let p_normed = p.clone() * (1.0 / normp);
+        let denominator = temp_hess - lambdan * normp * normp;
+        if denominator > 0.0 {
+            theta = -2.0 * scal(&hphi, &p) * normp / denominator;
+        } else {
+            theta *= 1.5;
+        }
+
+        let mut newphi = phi.clone() * theta.cos() + &(p_normed.clone() * theta.sin());
+        let (dxnewphi, dynewphi, _) = differentiate(&newphi);
+        energy_delta = energy(&newphi, &dxnewphi, &dynewphi) - e;
+
+        while energy_delta > 0.0 {
+            divisions += 1;
+            theta /= 2.0;
+            newphi = phi.clone() * theta.cos() + &(p_normed.clone() * theta.sin());
+            let (dxnewphi, dynewphi, _) = differentiate(&newphi);
+            energy_delta = energy(&newphi, &dxnewphi, &dynewphi) - e;
+        }
+
+        phi = newphi;
+
+        if k % 500 == 0 {
+            utils::plot_from_gpu(&phi, format!("temp/{}.png", k).as_str());
+            utils::plot_from_gpu(&phi, "plot/latest.png");
+            println!("");
+            println!("Iteration : {}", k);
+            println!("Energy : {}", e);
+            println!("a : {}", a);
+            println!("Norm2 : {}", norm2(phi.clone()));
+            println!("Divisions : {}", divisions);
+            divisions = 0;
+        }
+        //pb.inc(1);
     }
+
     g.queue.finish().unwrap();
     println!("Loop time: {:?}", instant.elapsed());
 
