@@ -120,10 +120,10 @@ pub fn benchmark() {
         }
     }
 
-    let data_buffer = g.new_buffer(n);
-    let work_buffer = g.new_buffer(n);
+    let data_buffer = g.new_array(n);
+    let work_buffer = g.new_array(n);
 
-    data_buffer
+    data_buffer.buffer
         .write(cpu_data.as_slice().unwrap())
         .enq()
         .unwrap();
@@ -143,25 +143,25 @@ pub fn benchmark() {
 
     let now = Instant::now();
     for _ in 0..niter {
-        data_buffer.copy(&work_buffer, None, None).enq().unwrap();
+        data_buffer.buffer.copy(&work_buffer.buffer, None, None).enq().unwrap();
         g.queue.finish().unwrap();
-        res = fourier_sum(&g, &work_buffer, &fftapp);
+        res = fourier_sum(&g, &work_buffer.buffer, &fftapp);
     }
     println!("fft : {}, time: {:?}", res, now.elapsed());
 
     let now = Instant::now();
     for _ in 0..niter {
-        data_buffer.copy(&work_buffer, None, None).enq().unwrap();
+        data_buffer.buffer.copy(&work_buffer.buffer, None, None).enq().unwrap();
         g.queue.finish().unwrap();
-        res = unsafe { sum(&g, &work_buffer, n * n) };
+        res = unsafe { sum(&g, &work_buffer.buffer, n * n) };
     }
     println!("simd: {}, time: {:?}", res, now.elapsed());
 
     let now = Instant::now();
     for _ in 0..niter {
-        data_buffer.copy(&work_buffer, None, None).enq().unwrap();
+        data_buffer.buffer.copy(&work_buffer.buffer, None, None).enq().unwrap();
         g.queue.finish().unwrap();
-        res = unsafe { inplace(&g, &work_buffer, (n * n) as u64) };
+        res = unsafe { inplace(&g, &work_buffer.buffer, (n * n) as u64) };
     }
     println!("csum: {}, time: {:?}", res, now.elapsed());
 }

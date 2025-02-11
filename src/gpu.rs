@@ -1,3 +1,4 @@
+use crate::array;
 use num::complex::Complex32;
 use ocl::Buffer;
 
@@ -16,7 +17,14 @@ impl Gpu {
         let platform = ocl::Platform::first().unwrap();
         let device = ocl::Device::first(&platform).unwrap();
         let context = ocl::Context::builder().build().unwrap();
-        let program = ocl::Program::builder().src(prog).build(&context).unwrap();
+        let temp = ocl::Program::builder().src(prog).build(&context);
+        let program = match temp {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("{}", e);
+                panic!("Panicking while building program.")
+            }
+        };
         let queue = ocl::Queue::new(&context, device, None).unwrap();
 
         Self {
@@ -30,30 +38,49 @@ impl Gpu {
 
     pub fn delete(&self) -> () {}
 
-    pub fn new_buffer(&self, n: usize) ->Buffer<Complex32> {
-    let buffer = Buffer::<Complex32>::builder()
-        .queue(self.queue.clone())
-        .len(n * n)
-        .build().unwrap();
-    return buffer;
-}
+    pub fn new_array(&self, n: usize) -> array::Array<Complex32> {
+        let buffer = Buffer::<Complex32>::builder()
+            .queue(self.queue.clone())
+            .len(n * n)
+            .build()
+            .unwrap();
+        return array::Array {
+            buffer,
+            gpu: &self,
+            size: n,
+        };
+    }
 }
 
 pub fn test() {
-    let g = Gpu::new(&SRC);
+    let gpu = Gpu::new(&SRC);
     let n = 100;
-    println!("Platform: {}", g.platform.version().unwrap());
-    println!("Device: {}", g.device.name().unwrap());
+    println!("Platform: {}", gpu.platform.version().unwrap());
+    println!("Device: {}", gpu.device.name().unwrap());
     println!(
         "Context: {}",
-        g.context.info(ocl::enums::ContextInfo::Properties).unwrap()
+        gpu.context
+            .info(ocl::enums::ContextInfo::Properties)
+            .unwrap()
     );
     //let s = device.info(ocl::enums::DeviceInfo::Extensions)?;
     //println!("Infos : {:?}", s);
 
-
-    let _buffer = Buffer::<Complex32>::builder()
-        .queue(g.queue.clone())
-        .len(n * n)
-        .build().unwrap();
+    let array = gpu.new_array(n);
+    unsafe {
+        let kernel = ocl::Kernel::builder()
+            .program(&gpu.program)
+            .queue(gpu.queue.clone())
+            .name("conj_vect")
+            .global_work_size([n, n])
+            .disable_arg_type_check()
+            .arg(&array.buffer)
+            .arg(&array.buffer)
+            .arg(n)
+            .build()
+            .unwrap();
+        println!("Default LWS: {:?}", kernel.default_local_work_size());
+        println!("Default GWS: {:?}", kernel.default_global_work_size());
+        kernel.enq().unwrap();
+    }
 }

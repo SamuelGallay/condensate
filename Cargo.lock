@@ -751,7 +751,6 @@ dependencies = [
 name = "navier"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap",
  "colorgrad",
  "image",

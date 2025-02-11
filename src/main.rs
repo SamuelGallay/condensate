@@ -2,6 +2,7 @@ pub mod condensate;
 pub mod utils;
 pub mod sum;
 pub mod gpu;
+pub mod array;
 
 use crate::condensate::Parameters;
 use clap::Parser;
@@ -61,11 +62,7 @@ fn main() {
     p.final_time = p.niter as f32 * p.dt;
     
     
-    match condensate::condensate(p) {
-        Ok(()) => println!("Program exited successfully."),
-        Err(e) => println!("Not working : {e:?}"),
-    }
-    
-    
+    gpu::test();
+    condensate::condensate(p);   
     //sum::benchmark();
 }

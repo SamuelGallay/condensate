@@ -1,20 +1,149 @@
-__kernel void diffusion(__global float2* phi,  __global float2* dx_phi,  __global float2* dy_phi, int N, float L, float dt) {
+inline float mod(float2 a){
+    return sqrt(a.x*a.x + a.y*a.y);
+}
+
+inline float mod2(float2 a){
+    return a.x*a.x + a.y*a.y;
+}
+
+inline float2 conj(float2 a){
+    return (float2) (a.x, -a.y);
+}
+
+inline float2 mul(float2 a, float2 b){
+    return (float2) (a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+}
+
+
+__kernel void mul_vect_scalar(__global float2* vect,  float2 scalar,  __global float2* out, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    out[k] = mul(vect[k], scalar);
+}
+
+__kernel void mul_vect_vect(__global float2* a,  __global float2* b,  __global float2* out, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    out[k] = mul(a[k], b[k]);
+}
+
+__kernel void conj_vect(__global float2* a,  __global float2* out, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    out[k] = conj(a[k]);
+}
+
+__kernel void norm2_vect(__global float2* a, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    a[k] = (float2) (mod2(a[k]), 0.0);
+}
+
+__kernel void scal(__global float2* a, __global float2* b, __global float2* out, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    out[k] = mul(a[k], conj(b[k]));
+}
+
+
+
+__kernel void energy(__global float2* phi,  __global float2* dxphi,  __global float2* dyphi, __global float2* out, float beta, float omega, float L, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    float dx = L / N;
+    float x = i*dx - L/2;
+    float y = j*dx - L/2;
+    float v = x*x + y*y;
+
+    float2 p = phi[k];
+    float2 dxp = dxphi[k];
+    float2 dyp = dyphi[k];
+
+    float s = 0;
+    s += 0.5f * (mod2(dxp) + mod2(dyp));
+    s += v * mod2(p);
+    s += beta/2 * mod2(p) * mod2(p);
+    s += omega * mul(p, conj(x*dyp-y*dxp)).y;
+    
+    out[k] = (float2)(s, 0);
+}
+
+__kernel void alpha(__global float2* phi,  __global float2* dxphi,  __global float2* dyphi, __global float2* out, float beta, float L, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    float dx = L / N;
+    float x = i*dx - L/2;
+    float y = j*dx - L/2;
+    float v = x*x + y*y;
+
+    float2 p = phi[k];
+    float2 dxp = dxphi[k];
+    float2 dyp = dyphi[k];
+
+    float s = 0;
+    s += 0.5f * (mod2(dxp) + mod2(dyp));
+    s += v * mod2(p);
+    s += beta * mod2(p) * mod2(p);
+    
+    out[k] = (float2)(s, 0);
+}
+
+__kernel void hphif(__global float2* phi, __global float2* ff, __global float2* dxff,  __global float2* dyff, __global float2* lapff, __global float2* out, float beta, float omega, float L, ulong N) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    float dx = L / N;
+    float x = i*dx - L/2;
+    float y = j*dx - L/2;
+    float v = x*x + y*y;
+
+    float2 p = phi[k];
+    float2 f = ff[k];
+    float2 dxf = dxff[k];
+    float2 dyf = dyff[k];
+    float2 lapf = lapff[k];
+
+    float2 s = 0;
+    s -= 0.5f * lapf;
+    s += v * f;
+    s += beta/2 * mod2(p) * f;
+    s += omega * mul((float2)(0, 1.0f), x*dyf - y*dxf);
+    
+    out[k] = s;
+}
+
+__kernel void differentiate(__global float2* phi,  __global float2* dx_phi,  __global float2* dy_phi, __global float2* lap_phi, ulong N, float L, float dt) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    float freqx = (2.0 * M_PI_F / L) * ((float)i - (float)N * (2*i >= N));
+    float freqy = (2.0 * M_PI_F / L) * ((float)j - (float)N * (2*j >= N));
+    float2 p = phi[i*N+j];
+    
+    dx_phi[i*N+j].x = -p.y * freqx;
+    dx_phi[i*N+j].y =  p.x * freqx;
+    dy_phi[i*N+j].x = -p.y * freqy;
+    dy_phi[i*N+j].y =  p.x * freqy;
+    lap_phi[i*N+j] = -(freqx*freqx + freqy*freqy) * p;
+}
+
+__kernel void diffusion(__global float2* phi, ulong N, float L, float dt) {
     int i = get_global_id(0);
     int j = get_global_id(1);
     float freqx = (2.0 * M_PI_F / L) * ((float)i - (float)N * (2*i >= N));
     float freqy = (2.0 * M_PI_F / L) * ((float)j - (float)N * (2*j >= N));
     float scalar = exp(-0.5 * (freqx*freqx + freqy*freqy) * dt);
-    float phix = phi[i*N +j].x * scalar;
-    float phiy = phi[i*N +j].y * scalar;
     
-    phi[i*N+j].x = phix;
-    phi[i*N+j].y = phiy;
-    dx_phi[i*N+j].x = -phiy * freqx;
-    dx_phi[i*N+j].y =  phix * freqx;
-    dy_phi[i*N+j].x = -phiy * freqy;
-    dy_phi[i*N+j].y =  phix * freqy;
+    phi[i*N+j] = phi[i*N +j] * scalar;
 }
-__kernel void rotation(__global float2* phi, __global float2* dx_phi, __global float2* dy_phi, __global float2* phi2hat, int N, float L, float omega, float beta, float dt) {
+
+__kernel void rotation(__global float2* phi, __global float2* dx_phi, __global float2* dy_phi, ulong N, float L, float omega, float beta, float dt) {
     int i = get_global_id(0);
     int j = get_global_id(1);
     
@@ -35,28 +164,70 @@ __kernel void rotation(__global float2* phi, __global float2* dx_phi, __global f
 
     phi[i*N+j].x = phix; 
     phi[i*N+j].y = phiy; 
-    phi2hat[i*N+j].x = phix*phix + phiy*phiy; 
-    phi2hat[i*N+j].y = 0; 
+    //phi2hat[i*N+j].x = phix*phix + phiy*phiy; 
+    //phi2hat[i*N+j].y = 0; 
 }
-
-__kernel void rescale(__global float2* inphi, __global float2* outphi,  __global float2* diff, int N, float dx, float precomputed_norm, __global float2* sum_buffer) {
+/*
+__kernel void hphif(
+        __global float2* phi,  
+        __global float2* f,  
+        __global float2* dxf,  
+        __global float2* dyf, 
+        __global float2* lapf, 
+        __global float2* hphif, 
+        ulong N, 
+        float L, 
+        float beta,
+        float omega) 
+{
     int i = get_global_id(0);
     int j = get_global_id(1);
-    float norm = precomputed_norm;
-    //norm = sqrt(sum_buffer[0].x) * dx;
-    
-    float prevx = outphi[i*N+j].x;
-    float prevy = outphi[i*N+j].y;
+    int k = i*N+j;
+    float dx = L / N;
+    float x = i*dx - L/2;
+    float y = j*dx - L/2;
+    float v = x*x + y*y;
 
-    float newx = inphi[i*N+j].x / norm;
-    float newy = inphi[i*N+j].y / norm;
+    float2 sum = 0;
+    sum -= 0.5f * lapf[k];
+    sum += v * f[k];
+    sum += beta * (phi[k].x*phi[k].x + phi[k].y*phi[k].y) * f[k];
+    sum.x -= omega * (x*dyf[k].y - y*dxf[k].y);
+    sum.y += omega * (x*dyf[k].x - y*dxf[k].x);
 
-    outphi[i*N+j].x = newx;
-    outphi[i*N+j].y = newy;
-
-    diff[i*N+j].x = (newx-prevx)*(newx-prevx) + (newx-prevy)*(newy-prevy);
-    diff[i*N+j].y = 0;
+    hphif[k] = sum;     
 }
+*/
+/*
+__kernel void energy(
+        __global float2* phi,  
+        __global float2* dxphi,  
+        __global float2* dyphi, 
+        __global float2* temp, 
+        int N, 
+        float L, 
+        float beta,
+        float omega) 
+{
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    int k = i*N+j;
+    float dx = L / N;
+    float x = i*dx - L/2;
+    float y = j*dx - L/2;
+    float v = x*x + y*y;
+
+    float2 sum = 0;
+    sum += 0.5f * (dxphi[k].x*dxphi[k].x + dxphi[k].y*dxphi[k].y);
+    sum += v * f[k];
+    sum += beta * (phi[k].x*phi[k].x + phi[k].y*phi[k].y) * f[k];
+    sum.x -= omega * (x*dyf[k].y - y*dxf[k].y) ;
+    sum.y += omega * (x*dyf[k].x - y*dxf[k].x) ;
+
+    hphif[k] = sum;     
+}
+*/
+
 
 __kernel void sum(__global float2* in_buffer, ulong in_offset, __global float2* out_buffer,  ulong out_offset) {
     int i = get_global_id(0);
