@@ -27,23 +27,16 @@ pub struct Parameters {
     pub omega: f64,
     pub beta: f64,
     pub gamma: f64,
-    pub cfl: f64,
     pub dx: f64,
-    pub dt: f64,
-    pub final_time: f64,
 }
 
 pub fn condensate(p: Parameters) -> () {
     ocl_vkfft_sys::say_hello();
-
     let name = format!(
         "{}-{}-{}-{}-{}-{}",
         p.n, p.niter, p.length, p.omega, p.beta, p.gamma
     );
-
     assert_eq!(usize::BITS, 64);
-    println!("Final time: {}", p.final_time);
-    println!("Transport CFL: {}", p.dt * p.omega * p.length / p.dx);
 
     let g = Gpu::new(SRC);
 
@@ -267,8 +260,8 @@ pub fn condensate(p: Parameters) -> () {
 
     let instant = Instant::now();
     let mut k = 0;
-    let mut energy_delta = -200f64;
-    let precision = -100f64; //10f64.powf(-15.0);
+    let mut steps_below_precision = 0;
+    let precision = 10f64.powf(-12.0);
     let theta0 = 0.1;
     let mut theta = theta0;
     let mut divisions = 0;
@@ -276,7 +269,7 @@ pub fn condensate(p: Parameters) -> () {
     let mut p_times_rnm1 = phi.clone();
     let mut pnm1 = phi.clone();
 
-    while k < p.niter && energy_delta < -precision {
+    while k < p.niter &&  steps_below_precision < 10{
         k += 1;
 
         let (dxphi, dyphi, lapphi) = differentiate(&phi);
@@ -327,7 +320,7 @@ pub fn condensate(p: Parameters) -> () {
 
         let mut newphi = phi.clone() * theta.cos() + &(p_normed.clone() * theta.sin());
         let (dxnewphi, dynewphi, _) = differentiate(&newphi);
-        energy_delta = energy(&newphi, &dxnewphi, &dynewphi) - e;
+        let mut energy_delta = energy(&newphi, &dxnewphi, &dynewphi) - e;
 
         while energy_delta > 0.0 {
             divisions += 1;
@@ -338,6 +331,9 @@ pub fn condensate(p: Parameters) -> () {
         }
 
         phi = newphi;
+    if energy_delta > -precision {
+        steps_below_precision += 1;}
+    else {steps_below_precision = 0;}
 
         if k % 500 == 0 {
             utils::plot_from_gpu(&phi, format!("temp/{}.png", k).as_str());
@@ -345,7 +341,7 @@ pub fn condensate(p: Parameters) -> () {
             println!("");
             println!("Iteration : {}", k);
             println!("Energy : {}", e);
-            println!("a : {}", a);
+            println!("Delta: {:?}", energy_delta);
             println!("Norm2 : {}", norm2(phi.clone()));
             println!("Divisions : {}", divisions);
             divisions = 0;

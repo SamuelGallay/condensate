@@ -6,7 +6,6 @@ pub mod utils;
 
 use crate::condensate::Parameters;
 use clap::Parser;
-use std::process::Command;
 use std::fs;
 
 #[derive(Parser)]
@@ -34,19 +33,13 @@ struct Cli {
     /// Gamma, the shape of the trap
     #[arg(short, long)]
     gamma: Option<f64>,
-
-    /// Courant–Friedrichs–Lewy condition, less than 1.0
-    #[arg(short, long)]
-    cfl: Option<f64>,
 }
 
 fn main() {
-    fs::remove_dir_all("temp").unwrap();
-    fs::create_dir("temp").unwrap();
-    Command::new("mkdir")
-        .args(["-p", "plot", "archive", "temp"])
-        .spawn()
-        .unwrap();
+    let _ = fs::remove_dir_all("temp");
+    let _ = fs::create_dir("temp");
+    let _ = fs::create_dir("archive");
+    let _ = fs::create_dir("plot");
     let cli = Cli::parse();
     //println!("{:?}", cli.n);
     let mut p = Parameters {
@@ -55,15 +48,10 @@ fn main() {
         omega: cli.omega.unwrap_or(1.3),
         beta: cli.beta.unwrap_or(2000.0),
         gamma: cli.gamma.unwrap_or(1.0),
-        cfl: cli.cfl.unwrap_or(42.0),
         niter: cli.iter.unwrap_or(1000),
         dx: 0.0,
-        dt: 0.0,
-        final_time: 0.0,
     };
     p.dx = p.length / p.n as f64;
-    p.dt = p.cfl * p.dx / p.omega / p.length;
-    p.final_time = p.niter as f64 * p.dt;
     println!("{:?}", p);
 
     gpu::test();

@@ -1,5 +1,5 @@
 # cuda packages
-apt-get -y update && apt-get -y --no-install-recommends install git curl neovim clang pkg-config libfontconfig-dev opencl-headers ocl-icd-opencl-dev;
+apt-get -y update && apt-get -y --no-install-recommends install git curl neovim clang pkg-config libfontconfig-dev opencl-headers ocl-icd-opencl-dev nvidia-cuda-toolkit;
 curl --proto '=https' --tlsv1.2 -ssf https://sh.rustup.rs | sh -s -- -y;
 . "$HOME/.cargo/env";
 cd $HOME

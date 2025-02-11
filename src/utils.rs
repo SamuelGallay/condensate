@@ -71,7 +71,9 @@ pub fn image_from_array(cpu_data: &Array2<f64>) -> ImageBuffer<image::Rgb<u8>, V
     let m = max(&cpu_data.mapv(f64::abs));
     let normalized = cpu_data.mapv(|x| x / m);
     let grad = colorgrad::GradientBuilder::new()
-        .html_colors(&["black", "red", "yellow"])
+        .html_colors(&["black", "maroon","red", "orange", "yellow"])
+        //.html_colors(&["black", "red", "orange", "yellow"])
+        //.html_colors(&["black", "red", "yellow"])
         .build::<colorgrad::CatmullRomGradient>()
         .unwrap();
     let imgbuf = image::ImageBuffer::from_fn(n as u32, n as u32, |i, j| {
