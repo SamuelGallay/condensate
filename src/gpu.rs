@@ -1,5 +1,5 @@
 use crate::array;
-use num::complex::Complex32;
+use num::complex::Complex64;
 use ocl::Buffer;
 
 const SRC: &str = include_str!("kernels.cl");
@@ -38,8 +38,8 @@ impl Gpu {
 
     pub fn delete(&self) -> () {}
 
-    pub fn new_array(&self, n: usize) -> array::Array<Complex32> {
-        let buffer = Buffer::<Complex32>::builder()
+    pub fn new_array(&self, n: usize) -> array::Array<Complex64> {
+        let buffer = Buffer::<Complex64>::builder()
             .queue(self.queue.clone())
             .len(n * n)
             .build()

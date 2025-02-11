@@ -12,7 +12,7 @@ use crate::utils;
 use crate::utils::get_from_gpu;
 
 //use indicatif::ProgressBar;
-use num::complex::Complex32;
+use num::complex::Complex64;
 use ocl::ocl_core::ClDeviceIdPtr;
 use ocl_vkfft_sys::VkFFTConfiguration;
 use std::time::Instant;
@@ -23,14 +23,14 @@ const SRC: &str = include_str!("kernels.cl");
 pub struct Parameters {
     pub n: usize,
     pub niter: u64,
-    pub length: f32,
-    pub omega: f32,
-    pub beta: f32,
-    pub gamma: f32,
-    pub cfl: f32,
-    pub dx: f32,
-    pub dt: f32,
-    pub final_time: f32,
+    pub length: f64,
+    pub omega: f64,
+    pub beta: f64,
+    pub gamma: f64,
+    pub cfl: f64,
+    pub dx: f64,
+    pub dt: f64,
+    pub final_time: f64,
 }
 
 pub fn condensate(p: Parameters) -> () {
@@ -49,7 +49,7 @@ pub fn condensate(p: Parameters) -> () {
 
     let phi0 = utils::init(p.n, 1.0, p.length);
     println!("Init l2 norm: {}", utils::l2_norm(&phi0, p.dx));
-    //let mut phi_back_data = Array2::<Complex32>::zeros((N, N));
+    //let mut phi_back_data = Array2::<Complex64>::zeros((N, N));
 
     let mut phi = g.new_array(p.n);
     phi.buffer
@@ -66,7 +66,7 @@ pub fn condensate(p: Parameters) -> () {
         .enq()
         .unwrap();
 
-    let mut s = Complex32::new(0.0, 0.0);
+    let mut s = Complex64::new(0.0, 0.0);
     for i in 0..p.n {
         for j in 0..p.n {
             s += phi0[[i, j]];
@@ -81,9 +81,10 @@ pub fn condensate(p: Parameters) -> () {
         numberBatches: 1,
         device: &mut g.device.as_ptr(),
         context: &mut g.context.as_ptr(),
-        bufferSize: &mut (8 * (p.n * p.n) as u64), // 8 = sizeof(Complex<f32>)
+        bufferSize: &mut (16 * (p.n * p.n) as u64), // 16 = sizeof(Complex<f64>)
         normalize: 1,
         isInputFormatted: 1,
+        doublePrecision: 1,
         ..Default::default()
     };
 
@@ -105,7 +106,7 @@ pub fn condensate(p: Parameters) -> () {
         return kernel;
     };
 
-    let scal = |a: &Array<'_, Complex32>, b: &Array<'_, Complex32>| -> f32 {
+    let scal = |a: &Array<'_, Complex64>, b: &Array<'_, Complex64>| -> f64 {
         let out = g.new_array(p.n);
         unsafe {
             kernel("scal")
@@ -122,10 +123,10 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let energy = |phi: &Array<'_, Complex32>,
-                  dxphi: &Array<'_, Complex32>,
-                  dyphi: &Array<'_, Complex32>|
-     -> f32 {
+    let energy = |phi: &Array<'_, Complex64>,
+                  dxphi: &Array<'_, Complex64>,
+                  dyphi: &Array<'_, Complex64>|
+     -> f64 {
         let out = g.new_array(p.n);
         unsafe {
             kernel("energy")
@@ -146,10 +147,10 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let alpha = |phi: &Array<'_, Complex32>,
-                 dxphi: &Array<'_, Complex32>,
-                 dyphi: &Array<'_, Complex32>|
-     -> f32 {
+    let alpha = |phi: &Array<'_, Complex64>,
+                 dxphi: &Array<'_, Complex64>,
+                 dyphi: &Array<'_, Complex64>|
+     -> f64 {
         let out = g.new_array(p.n);
         unsafe {
             kernel("alpha")
@@ -169,12 +170,12 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let hphif = |phi: &Array<'_, Complex32>,
-                 f: &Array<'_, Complex32>,
-                 dxf: &Array<'_, Complex32>,
-                 dyf: &Array<'_, Complex32>,
-                 lapf: &Array<'_, Complex32>|
-     -> Array<'_, Complex32> {
+    let hphif = |phi: &Array<'_, Complex64>,
+                 f: &Array<'_, Complex64>,
+                 dxf: &Array<'_, Complex64>,
+                 dyf: &Array<'_, Complex64>,
+                 lapf: &Array<'_, Complex64>|
+     -> Array<'_, Complex64> {
         let out = g.new_array(p.n);
         unsafe {
             kernel("hphif")
@@ -197,10 +198,10 @@ pub fn condensate(p: Parameters) -> () {
         return out;
     };
 
-    let differentiate = |f: &Array<'_, Complex32>| -> (
-        Array<'_, Complex32>,
-        Array<'_, Complex32>,
-        Array<'_, Complex32>,
+    let differentiate = |f: &Array<'_, Complex64>| -> (
+        Array<'_, Complex64>,
+        Array<'_, Complex64>,
+        Array<'_, Complex64>,
     ) {
         let fhat = g.new_array(p.n);
         builder.fft(&f.buffer, &fhat.buffer, -1);
@@ -229,7 +230,7 @@ pub fn condensate(p: Parameters) -> () {
         return (dxf, dyf, lapf);
     };
 
-    let invamlap2 = |fhat: &Array<'_, Complex32>, a: f32| -> () {
+    let invamlap2 = |fhat: &Array<'_, Complex64>, a: f64| -> () {
         unsafe {
             kernel("invamlap2")
                 .arg(&fhat.buffer)
@@ -244,18 +245,18 @@ pub fn condensate(p: Parameters) -> () {
         g.queue.finish().unwrap();
     };
 
-    let hess = |phi: &Array<'_, Complex32>,
-                f: &Array<'_, Complex32>,
-                dxf: &Array<'_, Complex32>,
-                dyf: &Array<'_, Complex32>,
-                lapf: &Array<'_, Complex32>|
-     -> f32 {
+    let hess = |phi: &Array<'_, Complex64>,
+                f: &Array<'_, Complex64>,
+                dxf: &Array<'_, Complex64>,
+                dyf: &Array<'_, Complex64>,
+                lapf: &Array<'_, Complex64>|
+     -> f64 {
         return 2.0
             * (scal(f, &hphif(phi, f, dxf, dyf, lapf))
                 + p.beta * scal(&(phi.clone() * phi), &(f.clone() * f)));
     };
-    let norm2 = |phi: Array<'_, Complex32>| -> f32 {
-        return f32::sqrt(phi.abs_squared().sum().re * p.dx * p.dx);
+    let norm2 = |phi: Array<'_, Complex64>| -> f64 {
+        return f64::sqrt(phi.abs_squared().sum().re * p.dx * p.dx);
     };
 
     // ------------------------------------------------------------------------- //
@@ -266,8 +267,8 @@ pub fn condensate(p: Parameters) -> () {
 
     let instant = Instant::now();
     let mut k = 0;
-    let mut energy_delta = -200f32;
-    let precision = -100f32; //10f32.powf(-15.0);
+    let mut energy_delta = -200f64;
+    let precision = -100f64; //10f64.powf(-15.0);
     let theta0 = 0.1;
     let mut theta = theta0;
     let mut divisions = 0;
@@ -294,12 +295,12 @@ pub fn condensate(p: Parameters) -> () {
         builder.fft(&temphat.buffer, &p_times_rn.buffer, 1);
         let p_times_rn = p_times_rn * &prec;
         
-        let mut mybeta = f32::max(
+        let mut mybeta = f64::max(
             0.0,
             scal(&(r.clone() + &(rnm1.clone() * -1.0)), &p_times_rn) / scal(&rnm1, &p_times_rnm1),
         );
         if k == 1 {
-            mybeta = 0f32;
+            mybeta = 0f64;
         }
         
         let descent_direction = p_times_rn.clone() * -1.0  + &(pnm1 * mybeta);

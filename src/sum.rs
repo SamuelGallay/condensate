@@ -1,5 +1,5 @@
 use ndarray::Array2;
-use num::complex::Complex32;
+use num::complex::Complex64;
 use num::Zero;
 use ocl::ocl_core::ClDeviceIdPtr;
 use rand::Rng;
@@ -9,7 +9,7 @@ use crate::gpu;
 
 const SRC: &str = include_str!("kernels.cl");
 
-pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: u64) -> Complex32 {
+pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex64>, length: u64) -> Complex64 {
     assert!(length.is_power_of_two());
     let n = u64::ilog2(length);
     assert_eq!(2u64.pow(n), length);
@@ -29,7 +29,7 @@ pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: u64
             .unwrap();
         g.queue.finish().unwrap();
     }
-    let mut temp = [Complex32::zero()];
+    let mut temp = [Complex64::zero()];
     buffer
         .read(temp.as_mut_slice())
         .queue(&g.queue)
@@ -39,14 +39,13 @@ pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: u64
     return temp[0];
 }
 
-pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: usize) -> Complex32 {
+pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex64>, length: usize) -> Complex64 {
     assert!(length.is_power_of_two());
     //let n = u64::ilog2(length);
     //assert_eq!(2u64.pow(n), length);
     //println!("Length {}", length);
     const DIVISOR:usize = 16;
     let mut current_length = length;
-    current_length /= 2; // SIMD
     while current_length % DIVISOR == 0 {
         current_length /= DIVISOR;
         ocl::Kernel::builder()
@@ -64,16 +63,16 @@ pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: usize) 
         g.queue.finish().unwrap();
     }
     //assert_eq!(current_length, 1);
-    let mut temp = [Complex32::zero(); 2 * DIVISOR]; // SIMD * divisor
+    let mut temp = [Complex64::zero(); DIVISOR]; // SIMD * divisor
     buffer
         .read(temp.as_mut_slice())
         .queue(&g.queue)
-        .len(2 * current_length)
+        .len(current_length)
         .enq()
         .unwrap();
     g.queue.finish().unwrap();
-    let mut s = Complex32::zero();
-    for i in 0..(2*current_length) {
+    let mut s = Complex64::zero();
+    for i in 0..(current_length) {
         s += temp[i];
     }
     return s;
@@ -81,12 +80,12 @@ pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Complex32>, length: usize) 
 
 pub fn fourier_sum(
     g: &gpu::Gpu,
-    buffer: &ocl::Buffer<Complex32>,
+    buffer: &ocl::Buffer<Complex64>,
     fftapp: &ocl_vkfft::App,
-) -> Complex32 {
+) -> Complex64 {
     let builder = ocl_vkfft::Builder::new(&fftapp, &g.queue);
     builder.fft(&buffer, &buffer, -1);
-    let mut temp = [Complex32::zero()];
+    let mut temp = [Complex64::zero()];
     buffer
         .read(temp.as_mut_slice())
         .queue(&g.queue)
@@ -106,17 +105,17 @@ pub fn benchmark() {
         numberBatches: 1,
         device: &mut g.device.as_ptr(),
         context: &mut g.context.as_ptr(),
-        bufferSize: &mut (8 * (n * n) as u64), // 8 = sizeof(Complex<f32>)
+        bufferSize: &mut (8 * (n * n) as u64), // 8 = sizeof(Complex<f64>)
         normalize: 1,
         isInputFormatted: 1,
         ..Default::default()
     };
     let fftapp = ocl_vkfft::App::new(config);
 
-    let mut cpu_data = Array2::<Complex32>::zeros((n, n));
+    let mut cpu_data = Array2::<Complex64>::zeros((n, n));
     for i in 0..n {
         for j in 0..n {
-            cpu_data[[i, j]] = Complex32::new(rng.gen::<f32>(), rng.gen::<f32>());
+            cpu_data[[i, j]] = Complex64::new(rng.gen::<f64>(), rng.gen::<f64>());
         }
     }
 
@@ -130,11 +129,11 @@ pub fn benchmark() {
     g.queue.finish().unwrap();
 
     let niter = 100;
-    let mut res = Complex32::zero();
+    let mut res = Complex64::zero();
 
     let now = Instant::now();
     for _ in 0..niter {
-        res = Complex32::zero();
+        res = Complex64::zero();
         for e in cpu_data.iter() {
             res += e;
         }

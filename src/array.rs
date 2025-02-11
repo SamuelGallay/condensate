@@ -1,6 +1,6 @@
 use crate::gpu::Gpu;
 use crate::sum;
-use num::complex::Complex32;
+use num::complex::Complex64;
 use ocl::Buffer;
 use std::ops::{Mul, Add};
 
@@ -11,14 +11,14 @@ pub struct Array<'a, T: ocl::OclPrm> {
 }
 
 pub trait Stuff {
-    fn sum(self) -> Complex32;
+    fn sum(self) -> Complex64;
     fn conj(self) -> Self;
     fn abs_squared(self) -> Self;
     // Only acting on the real part and makes the imaginary part zero... Yes it is hacky.
     fn inv_sqrt(self) -> Self;
 }
 
-impl<'a> Clone for Array<'a, Complex32> {
+impl<'a> Clone for Array<'a, Complex64> {
     fn clone(&self) -> Self {
         let out = self.gpu.new_array(self.size);
         self.buffer.copy(&out.buffer, None, None).enq().unwrap();
@@ -27,8 +27,8 @@ impl<'a> Clone for Array<'a, Complex32> {
     }
 }
 
-impl<'a> Stuff for Array<'a, Complex32> {
-    fn sum(self) -> Complex32 {
+impl<'a> Stuff for Array<'a, Complex64> {
+    fn sum(self) -> Complex64 {
         return unsafe { sum::sum(self.gpu, &self.buffer, self.size * self.size) };
     }
 
@@ -91,9 +91,9 @@ impl<'a> Stuff for Array<'a, Complex32> {
 
 }
 
-impl<'a> Mul<Complex32> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
-    fn mul(self, scalar: Complex32) -> Self::Output {
+impl<'a> Mul<Complex64> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
+    fn mul(self, scalar: Complex64) -> Self::Output {
         unsafe {
             ocl::Kernel::builder()
                 .program(&self.gpu.program)
@@ -115,16 +115,16 @@ impl<'a> Mul<Complex32> for Array<'a, Complex32> {
     }
 }
 
-impl<'a> Add<f32> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
-    fn add(self, scalar: f32) -> Self::Output {
-        return self + Complex32::new(scalar, 0.0);
+impl<'a> Add<f64> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
+    fn add(self, scalar: f64) -> Self::Output {
+        return self + Complex64::new(scalar, 0.0);
     }
 }
 
-impl<'a> Add<Complex32> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
-    fn add(self, scalar: Complex32) -> Self::Output {
+impl<'a> Add<Complex64> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
+    fn add(self, scalar: Complex64) -> Self::Output {
         unsafe {
             ocl::Kernel::builder()
                 .program(&self.gpu.program)
@@ -146,15 +146,15 @@ impl<'a> Add<Complex32> for Array<'a, Complex32> {
     }
 }
 
-impl<'a> Mul<f32> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
-    fn mul(self, scalar: f32) -> Self::Output {
-        return self * Complex32::new(scalar, 0.0);
+impl<'a> Mul<f64> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
+    fn mul(self, scalar: f64) -> Self::Output {
+        return self * Complex64::new(scalar, 0.0);
     }
 }
 
-impl<'a> Mul<&Self> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
+impl<'a> Mul<&Self> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
     fn mul(self, other: &Self) -> Self::Output {
         //let out = self.gpu.new_array(self.size);
         unsafe {
@@ -179,8 +179,8 @@ impl<'a> Mul<&Self> for Array<'a, Complex32> {
     }
 }
 
-impl<'a> Add<&Self> for Array<'a, Complex32> {
-    type Output = Array<'a, Complex32>;
+impl<'a> Add<&Self> for Array<'a, Complex64> {
+    type Output = Array<'a, Complex64>;
     fn add(self, other: &Self) -> Self::Output {
         //let out = self.gpu.new_array(self.size);
         unsafe {

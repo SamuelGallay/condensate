@@ -21,23 +21,23 @@ struct Cli {
 
     /// The physical size of the domain
     #[arg(short, long)]
-    length: Option<f32>,
+    length: Option<f64>,
 
     /// Omega, the rotation
     #[arg(short, long)]
-    omega: Option<f32>,
+    omega: Option<f64>,
 
     /// Beta, the repulsion
     #[arg(short, long)]
-    beta: Option<f32>,
+    beta: Option<f64>,
 
     /// Gamma, the shape of the trap
     #[arg(short, long)]
-    gamma: Option<f32>,
+    gamma: Option<f64>,
 
     /// Courant–Friedrichs–Lewy condition, less than 1.0
     #[arg(short, long)]
-    cfl: Option<f32>,
+    cfl: Option<f64>,
 }
 
 fn main() {
@@ -61,9 +61,9 @@ fn main() {
         dt: 0.0,
         final_time: 0.0,
     };
-    p.dx = p.length / p.n as f32;
+    p.dx = p.length / p.n as f64;
     p.dt = p.cfl * p.dx / p.omega / p.length;
-    p.final_time = p.niter as f32 * p.dt;
+    p.final_time = p.niter as f64 * p.dt;
     println!("{:?}", p);
 
     gpu::test();
