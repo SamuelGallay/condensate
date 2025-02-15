@@ -2,11 +2,13 @@ extern crate num;
 extern crate ocl;
 use core::ffi::c_void;
 
-use num::complex::Complex64;
+//use num::complex::Complex64;
 use ocl::{Buffer, Queue};
 use ocl_vkfft_sys::{
     VkFFTApplication, VkFFTConfiguration, VkFFTLaunchParams, VkFFTResult_VKFFT_SUCCESS,
 };
+
+type Cplx = ocl::prm::Double2;
 
 pub struct App {
     // This pointer must never be allowed to leave the struct (LOL)
@@ -38,7 +40,7 @@ pub struct Params {
     outbuf: *mut c_void,
 }
 impl Params {
-    pub fn new(queue: &Queue, inbuffer: &Buffer<Complex64>, outbuffer: &Buffer<Complex64>) -> Self {
+    pub fn new(queue: &Queue, inbuffer: &Buffer<Cplx>, outbuffer: &Buffer<Cplx>) -> Self {
         Params {
             queue: queue.as_ptr(),
             inbuf: inbuffer.as_ptr(),
@@ -76,7 +78,7 @@ impl<'a> Builder<'a> {
     pub fn new(app: &'a App, queue: &'a Queue) -> Self {
         Self { app, queue }
     }
-    pub fn fft(&self, inbuffer: &Buffer<Complex64>, outbuffer: &Buffer<Complex64>, dir: i32) -> () {
+    pub fn fft(&self, inbuffer: &Buffer<Cplx>, outbuffer: &Buffer<Cplx>, dir: i32) -> () {
         let p = Params::new(self.queue, inbuffer, outbuffer);
         append(self.app, dir, &p);
         self.queue.finish().unwrap();

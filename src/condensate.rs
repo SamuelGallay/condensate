@@ -10,9 +10,10 @@ use crate::array::Stuff;
 use crate::gpu::Gpu;
 use crate::utils;
 use crate::utils::get_from_gpu;
+use crate::array::Cplx;
+use crate::allocator::Allocator;
 
 //use indicatif::ProgressBar;
-use num::complex::Complex64;
 use ocl::ocl_core::ClDeviceIdPtr;
 use ocl_vkfft_sys::VkFFTConfiguration;
 use std::time::Instant;
@@ -39,19 +40,18 @@ pub fn condensate(p: Parameters) -> () {
     assert_eq!(usize::BITS, 64);
 
     let g = Gpu::new(SRC);
+    let alloc = Allocator::new(&g, p.n);
 
     let phi0 = utils::init(p.n, 1.0, p.length);
-    println!("Init l2 norm: {}", utils::l2_norm(&phi0, p.dx));
-    //let mut phi_back_data = Array2::<Complex64>::zeros((N, N));
 
-    let mut phi = g.new_array(p.n);
+    let mut phi = alloc.new_array();
     phi.buffer
         .write(phi0.as_slice().unwrap())
         .queue(&g.queue)
         .enq()
         .unwrap();
 
-    let vector_field = g.new_array(p.n);
+    let vector_field = alloc.new_array();
     vector_field
         .buffer
         .write(utils::vector_field(p.n, p.length).as_slice().unwrap())
@@ -59,7 +59,7 @@ pub fn condensate(p: Parameters) -> () {
         .enq()
         .unwrap();
 
-    let mut s = Complex64::new(0.0, 0.0);
+    let mut s = Cplx::new(0.0, 0.0);
     for i in 0..p.n {
         for j in 0..p.n {
             s += phi0[[i, j]];
@@ -88,25 +88,22 @@ pub fn condensate(p: Parameters) -> () {
 
     let kernel = |name: &str| {
         let mut kernel = ocl::Kernel::builder();
-        unsafe {
             kernel
                 .program(&g.program)
                 .queue(g.queue.clone())
                 .name(name)
-                .global_work_size([p.n, p.n])
-                .disable_arg_type_check();
-        }
+                .global_work_size([p.n, p.n]);
         return kernel;
     };
 
-    let scal = |a: &Array<'_, Complex64>, b: &Array<'_, Complex64>| -> f64 {
-        let out = g.new_array(p.n);
+    let scal = |a: &Array<'_>, b: &Array<'_>| -> f64 {
+        let out = alloc.new_array();
         unsafe {
             kernel("scal")
                 .arg(&a.buffer)
                 .arg(&b.buffer)
                 .arg(&out.buffer)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -116,11 +113,11 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let energy = |phi: &Array<'_, Complex64>,
-                  dxphi: &Array<'_, Complex64>,
-                  dyphi: &Array<'_, Complex64>|
+    let energy = |phi: &Array<'_>,
+                  dxphi: &Array<'_>,
+                  dyphi: &Array<'_>|
      -> f64 {
-        let out = g.new_array(p.n);
+        let out = alloc.new_array();
         unsafe {
             kernel("energy")
                 .arg(&phi.buffer)
@@ -130,7 +127,7 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(p.beta)
                 .arg(p.omega)
                 .arg(p.length)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -140,11 +137,11 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let alpha = |phi: &Array<'_, Complex64>,
-                 dxphi: &Array<'_, Complex64>,
-                 dyphi: &Array<'_, Complex64>|
+    let alpha = |phi: &Array<'_>,
+                 dxphi: &Array<'_>,
+                 dyphi: &Array<'_>|
      -> f64 {
-        let out = g.new_array(p.n);
+        let out = alloc.new_array();
         unsafe {
             kernel("alpha")
                 .arg(&phi.buffer)
@@ -153,7 +150,7 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(&out.buffer)
                 .arg(p.beta)
                 .arg(p.length)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -163,13 +160,13 @@ pub fn condensate(p: Parameters) -> () {
         return out.sum().re * p.dx * p.dx;
     };
 
-    let hphif = |phi: &Array<'_, Complex64>,
-                 f: &Array<'_, Complex64>,
-                 dxf: &Array<'_, Complex64>,
-                 dyf: &Array<'_, Complex64>,
-                 lapf: &Array<'_, Complex64>|
-     -> Array<'_, Complex64> {
-        let out = g.new_array(p.n);
+    let hphif = |phi: &Array<'_>,
+                 f: &Array<'_>,
+                 dxf: &Array<'_>,
+                 dyf: &Array<'_>,
+                 lapf: &Array<'_>|
+     -> Array<'_> {
+        let out = alloc.new_array();
         unsafe {
             kernel("hphif")
                 .arg(&phi.buffer)
@@ -181,7 +178,7 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(p.beta)
                 .arg(p.omega)
                 .arg(p.length)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -191,17 +188,17 @@ pub fn condensate(p: Parameters) -> () {
         return out;
     };
 
-    let differentiate = |f: &Array<'_, Complex64>| -> (
-        Array<'_, Complex64>,
-        Array<'_, Complex64>,
-        Array<'_, Complex64>,
+    let differentiate = |f: &Array<'_>| -> (
+        Array<'_>,
+        Array<'_>,
+        Array<'_>,
     ) {
-        let fhat = g.new_array(p.n);
+        let fhat = alloc.new_array();
         builder.fft(&f.buffer, &fhat.buffer, -1);
 
-        let dxf = g.new_array(p.n);
-        let dyf = g.new_array(p.n);
-        let lapf = g.new_array(p.n);
+        let dxf = alloc.new_array();
+        let dyf = alloc.new_array();
+        let lapf = alloc.new_array();
         unsafe {
             kernel("differentiate")
                 .arg(&fhat.buffer)
@@ -209,7 +206,7 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(&dyf.buffer)
                 .arg(&lapf.buffer)
                 .arg(p.length)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -223,13 +220,13 @@ pub fn condensate(p: Parameters) -> () {
         return (dxf, dyf, lapf);
     };
 
-    let invamlap2 = |fhat: &Array<'_, Complex64>, a: f64| -> () {
+    let invamlap2 = |fhat: &Array<'_>, a: f64| -> () {
         unsafe {
             kernel("invamlap2")
                 .arg(&fhat.buffer)
                 .arg(a)
                 .arg(p.length)
-                .arg(p.n)
+                .arg(p.n as u64)
                 .build()
                 .unwrap()
                 .enq()
@@ -238,17 +235,17 @@ pub fn condensate(p: Parameters) -> () {
         g.queue.finish().unwrap();
     };
 
-    let hess = |phi: &Array<'_, Complex64>,
-                f: &Array<'_, Complex64>,
-                dxf: &Array<'_, Complex64>,
-                dyf: &Array<'_, Complex64>,
-                lapf: &Array<'_, Complex64>|
+    let hess = |phi: &Array<'_>,
+                f: &Array<'_>,
+                dxf: &Array<'_>,
+                dyf: &Array<'_>,
+                lapf: &Array<'_>|
      -> f64 {
         return 2.0
             * (scal(f, &hphif(phi, f, dxf, dyf, lapf))
                 + p.beta * scal(&(phi.clone() * phi), &(f.clone() * f)));
     };
-    let norm2 = |phi: Array<'_, Complex64>| -> f64 {
+    let norm2 = |phi: Array<'_>| -> f64 {
         return f64::sqrt(phi.abs_squared().sum().re * p.dx * p.dx);
     };
 
@@ -268,8 +265,9 @@ pub fn condensate(p: Parameters) -> () {
     let mut rnm1 = phi.clone();
     let mut p_times_rnm1 = phi.clone();
     let mut pnm1 = phi.clone();
+    let mut now = Instant::now();
 
-    while k < p.niter &&  steps_below_precision < 10{
+    while k < p.niter && steps_below_precision < 10 {
         k += 1;
 
         let (dxphi, dyphi, lapphi) = differentiate(&phi);
@@ -280,14 +278,14 @@ pub fn condensate(p: Parameters) -> () {
         let r = phi.clone() * (-lambdan) + &hphi;
 
         let prec = (phi.clone().abs_squared() * p.beta + &vector_field + a).inv_sqrt();
-        
-        let temphat = g.new_array(p.n);
+
+        let temphat = alloc.new_array();
         builder.fft(&(r.clone() * &prec).buffer, &temphat.buffer, -1);
         invamlap2(&temphat, a);
-        let p_times_rn = g.new_array(p.n);
+        let p_times_rn = alloc.new_array();
         builder.fft(&temphat.buffer, &p_times_rn.buffer, 1);
         let p_times_rn = p_times_rn * &prec;
-        
+
         let mut mybeta = f64::max(
             0.0,
             scal(&(r.clone() + &(rnm1.clone() * -1.0)), &p_times_rn) / scal(&rnm1, &p_times_rnm1),
@@ -295,8 +293,8 @@ pub fn condensate(p: Parameters) -> () {
         if k == 1 {
             mybeta = 0f64;
         }
-        
-        let descent_direction = p_times_rn.clone() * -1.0  + &(pnm1 * mybeta);
+
+        let descent_direction = p_times_rn.clone() * -1.0 + &(pnm1 * mybeta);
         let temp_scal = -scal(&descent_direction, &phi);
 
         // p := proj_descent_direction
@@ -331,11 +329,13 @@ pub fn condensate(p: Parameters) -> () {
         }
 
         phi = newphi;
-    if energy_delta > -precision {
-        steps_below_precision += 1;}
-    else {steps_below_precision = 0;}
+        if energy_delta > -precision {
+            steps_below_precision += 1;
+        } else {
+            steps_below_precision = 0;
+        }
 
-        if k % 500 == 0 {
+        if k % 100 == 0 {
             utils::plot_from_gpu(&phi, format!("temp/{}.png", k).as_str());
             utils::plot_from_gpu(&phi, "plot/latest.png");
             println!("");
@@ -345,6 +345,8 @@ pub fn condensate(p: Parameters) -> () {
             println!("Norm2 : {}", norm2(phi.clone()));
             println!("Divisions : {}", divisions);
             divisions = 0;
+            println!("Elapsed: {:.2?}", now.elapsed());
+            now = Instant::now();
         }
         //pb.inc(1);
     }

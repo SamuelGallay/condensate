@@ -1,7 +1,3 @@
-use crate::array;
-use num::complex::Complex64;
-use ocl::Buffer;
-
 const SRC: &str = include_str!("kernels.cl");
 
 pub struct Gpu {
@@ -38,8 +34,9 @@ impl Gpu {
 
     pub fn delete(&self) -> () {}
 
-    pub fn new_array(&self, n: usize) -> array::Array<Complex64> {
-        let buffer = Buffer::<Complex64>::builder()
+    /*
+    pub fn new_array(&self, n: usize) -> array::Array<Cplx> {
+        let buffer = Buffer::<Cplx>::builder()
             .queue(self.queue.clone())
             .len(n * n)
             .build()
@@ -50,6 +47,7 @@ impl Gpu {
             size: n,
         };
     }
+    */
 }
 
 pub fn test() {
@@ -63,10 +61,11 @@ pub fn test() {
             .info(ocl::enums::ContextInfo::Properties)
             .unwrap()
     );
+    let alloc = crate::allocator::Allocator::new(&gpu, n);
     //let s = device.info(ocl::enums::DeviceInfo::Extensions)?;
     //println!("Infos : {:?}", s);
 
-    let array = gpu.new_array(n);
+    let array = alloc.new_array();
     unsafe {
         let kernel = ocl::Kernel::builder()
             .program(&gpu.program)

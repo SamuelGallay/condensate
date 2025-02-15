@@ -3,6 +3,7 @@ pub mod condensate;
 pub mod gpu;
 pub mod sum;
 pub mod utils;
+pub mod allocator;
 
 use crate::condensate::Parameters;
 use clap::Parser;
