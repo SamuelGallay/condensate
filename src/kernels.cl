@@ -193,7 +193,7 @@ __kernel void sum_inplace(__global double2* buffer, ulong out_size) {
 }
 
 // Actually there is no SIMD at all...
-__kernel void simd(__global double2* buffer, ulong out_size) {
+__kernel void fast_sum(__global double2* buffer, ulong out_size) {
     int i = get_global_id(0);
     double2 s = buffer[i];
     s+= buffer[i + out_size];

@@ -30,7 +30,6 @@ impl<'a> Clone for Array<'a> {
     fn clone(&self) -> Self {
         let out = self.allocator.new_array();
         self.buffer.copy(&out.buffer, None, None).enq().unwrap();
-        self.gpu.queue.finish().unwrap();
         out
     }
 }
@@ -54,7 +53,6 @@ impl<'a> Stuff for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("conj_vect")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(&self.buffer)
                 .arg(self.size)
@@ -63,7 +61,6 @@ impl<'a> Stuff for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 
@@ -74,7 +71,6 @@ impl<'a> Stuff for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("abs_squared_vect")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(self.size)
                 .build()
@@ -82,7 +78,6 @@ impl<'a> Stuff for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
     fn inv_sqrt(self) -> Self {
@@ -92,7 +87,6 @@ impl<'a> Stuff for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("inv_sqrt_vect")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(self.size)
                 .build()
@@ -100,7 +94,6 @@ impl<'a> Stuff for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 }
@@ -114,7 +107,6 @@ impl<'a> Mul<Cplx> for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("mul_vect_scalar")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(scalar)
                 .arg(&self.buffer)
@@ -124,7 +116,6 @@ impl<'a> Mul<Cplx> for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 }
@@ -145,7 +136,6 @@ impl<'a> Add<Cplx> for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("add_vect_scalar")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(scalar)
                 .arg(&self.buffer)
@@ -155,7 +145,6 @@ impl<'a> Add<Cplx> for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 }
@@ -176,7 +165,6 @@ impl<'a> Mul<&Self> for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("mul_vect_vect")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(&other.buffer)
                 .arg(&self.buffer)
@@ -186,7 +174,6 @@ impl<'a> Mul<&Self> for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 }
@@ -200,7 +187,6 @@ impl<'a> Add<&Self> for Array<'a> {
                 .queue(self.gpu.queue.clone())
                 .name("add_vect_vect")
                 .global_work_size([self.size, self.size])
-                .disable_arg_type_check()
                 .arg(&self.buffer)
                 .arg(&other.buffer)
                 .arg(&self.buffer)
@@ -210,7 +196,6 @@ impl<'a> Add<&Self> for Array<'a> {
                 .enq()
                 .unwrap();
         }
-        self.gpu.queue.finish().unwrap();
         self
     }
 }

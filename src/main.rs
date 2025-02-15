@@ -55,7 +55,7 @@ fn main() {
     p.dx = p.length / p.n as f64;
     println!("{:?}", p);
 
-    gpu::test(p.clone());
+    gpu::test(p);
     condensate::condensate(p);
     //sum::benchmark();
 }

@@ -5,9 +5,9 @@ use ocl::ocl_core::ClDeviceIdPtr;
 use rand::Rng;
 use std::time::Instant;
 
+use crate::allocator::Allocator;
 use crate::array::Cplx;
 use crate::gpu;
-use crate::allocator::Allocator;
 
 const SRC: &str = include_str!("kernels.cl");
 
@@ -29,7 +29,6 @@ pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> 
             .unwrap()
             .enq()
             .unwrap();
-        g.queue.finish().unwrap();
     }
     let mut temp = [Cplx::zero()];
     buffer
@@ -54,7 +53,7 @@ pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> Comp
         ocl::Kernel::builder()
             .program(&g.program)
             .queue(g.queue.clone())
-            .name("simd")
+            .name("fast_sum")
             .global_work_size([current_length])
             .arg(buffer)
             .arg(ocl::prm::Ulong::new(current_length as u64))
@@ -62,7 +61,6 @@ pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> Comp
             .unwrap()
             .enq()
             .unwrap();
-        g.queue.finish().unwrap();
     }
     //assert_eq!(current_length, 1);
     let mut temp = [Cplx::zero(); DIVISOR]; // SIMD * divisor
@@ -100,11 +98,11 @@ pub fn benchmark() {
     let alloc = Allocator::new(&g, n);
     let config = ocl_vkfft_sys::VkFFTConfiguration {
         FFTdim: 2,
-        size: [n as u64, n as u64, 0, 0],
+        size: [n, n, 0, 0],
         numberBatches: 1,
         device: &mut g.device.as_ptr(),
         context: &mut g.context.as_ptr(),
-        bufferSize: &mut (8 * (n * n) as u64), // 8 = sizeof(Complex<f64>)
+        bufferSize: &mut (8 * n * n), // 8 = sizeof(Complex<f64>)
         normalize: 1,
         isInputFormatted: 1,
         ..Default::default()
@@ -148,7 +146,6 @@ pub fn benchmark() {
             .copy(&work_buffer.buffer, None, None)
             .enq()
             .unwrap();
-        g.queue.finish().unwrap();
         res = fourier_sum(&g, &work_buffer.buffer, &fftapp);
     }
     println!("fft : {}, time: {:?}", res, now.elapsed());
@@ -160,7 +157,6 @@ pub fn benchmark() {
             .copy(&work_buffer.buffer, None, None)
             .enq()
             .unwrap();
-        g.queue.finish().unwrap();
         res = unsafe { sum(&g, &work_buffer.buffer, n * n) };
     }
     println!("simd: {}, time: {:?}", res, now.elapsed());
@@ -172,8 +168,7 @@ pub fn benchmark() {
             .copy(&work_buffer.buffer, None, None)
             .enq()
             .unwrap();
-        g.queue.finish().unwrap();
-        res = unsafe { inplace(&g, &work_buffer.buffer, (n * n) as u64) };
+        res = unsafe { inplace(&g, &work_buffer.buffer, n * n) };
     }
     println!("csum: {}, time: {:?}", res, now.elapsed());
 }

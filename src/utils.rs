@@ -11,7 +11,7 @@ use crate::array::Cplx;
 use num::complex::Complex64;
 use num::complex::ComplexFloat;
 use num::integer::Roots;
-use ocl::Buffer;
+//use ocl::Buffer;
 use rand::Rng;
 use std::f64::consts::PI;
 
@@ -55,11 +55,11 @@ pub fn fftfreq(n: usize, l: f64) -> Vec<f64> {
     freq
 }
 
-pub fn get_from_gpu(buffer: &Buffer<Cplx>) -> Array2<Complex64> {
-    let n = buffer.len().sqrt();
+pub fn get_from_gpu(a: &array::Array) -> Array2<Complex64> {
+    let n = a.buffer.len().sqrt();
     let mut cpu_data = Array2::<Cplx>::zeros((n, n));
-    buffer.read(cpu_data.as_slice_mut().unwrap()).enq().unwrap();
-    buffer.default_queue().unwrap().finish().unwrap();
+    a.buffer.read(cpu_data.as_slice_mut().unwrap()).enq().unwrap();
+    a.gpu.queue.finish().unwrap();
     unsafe { std::mem::transmute::<Array2<Cplx>, Array2<Complex64>>(cpu_data) }
     
 }
@@ -68,8 +68,8 @@ pub fn max(arr: &Array2<f64>) -> f64 {
     arr.into_iter().cloned().reduce(f64::max).unwrap()
 }
 
-pub fn printmax(buffer: &Buffer<Cplx>, name: &str) {
-    let m = max(&get_from_gpu(buffer).mapv(Complex64::norm));
+pub fn printmax(a: &array::Array, name: &str) {
+    let m = max(&get_from_gpu(a).mapv(Complex64::norm));
     println!("Max {} : {}", name, m);
 }
 
@@ -100,7 +100,7 @@ pub fn plot_array(cpu_data: &Array2<f64>, name: &str) {
 }
 
 pub fn plot_from_gpu(a: &array::Array, name: &str) {
-    let cpu_data = get_from_gpu(&a.buffer).mapv(|x| x.abs()*x.abs());
+    let cpu_data = get_from_gpu(a).mapv(|x| x.abs()*x.abs());
     plot_array(&cpu_data, name);
 }
 

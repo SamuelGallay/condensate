@@ -15,9 +15,9 @@ use crate::utils::get_from_gpu;
 
 //use indicatif::ProgressBar;
 use ocl::ocl_core::ClDeviceIdPtr;
+use ocl::OclPrm;
 use ocl_vkfft_sys::VkFFTConfiguration;
 use std::time::Instant;
-use ocl::OclPrm;
 
 const SRC: &str = include_str!("kernels.cl");
 
@@ -33,7 +33,6 @@ pub struct Parameters {
     pub dx: f64,
 }
 unsafe impl OclPrm for Parameters {}
-
 
 pub fn condensate(p: Parameters) {
     ocl_vkfft_sys::say_hello();
@@ -113,7 +112,6 @@ pub fn condensate(p: Parameters) {
                 .enq()
                 .unwrap();
         }
-        g.queue.finish().unwrap();
         out.sum().re * p.dx * p.dx
     };
 
@@ -131,7 +129,6 @@ pub fn condensate(p: Parameters) {
                 .enq()
                 .unwrap();
         }
-        g.queue.finish().unwrap();
         out.sum().re * p.dx * p.dx
     };
 
@@ -149,7 +146,6 @@ pub fn condensate(p: Parameters) {
                 .enq()
                 .unwrap();
         }
-        g.queue.finish().unwrap();
         out.sum().re * p.dx * p.dx
     };
 
@@ -174,7 +170,6 @@ pub fn condensate(p: Parameters) {
                 .enq()
                 .unwrap();
         }
-        g.queue.finish().unwrap();
         out
     };
 
@@ -197,7 +192,6 @@ pub fn condensate(p: Parameters) {
                 .enq()
                 .unwrap();
         }
-        g.queue.finish().unwrap();
         builder.fft(&dxf.buffer, &dxf.buffer, 1);
         builder.fft(&dyf.buffer, &dyf.buffer, 1);
         builder.fft(&lapf.buffer, &lapf.buffer, 1);
@@ -205,19 +199,16 @@ pub fn condensate(p: Parameters) {
         (dxf, dyf, lapf)
     };
 
-    let invamlap2 = |fhat: &Array<'_>, a: f64| {
-        unsafe {
-            kernel("invamlap2")
-                .arg(&fhat.buffer)
-                .arg(a)
-                .arg(p.length)
-                .arg(p.n)
-                .build()
-                .unwrap()
-                .enq()
-                .unwrap();
-        }
-        g.queue.finish().unwrap();
+    let invamlap2 = |fhat: &Array<'_>, a: f64| unsafe {
+        kernel("invamlap2")
+            .arg(&fhat.buffer)
+            .arg(a)
+            .arg(p.length)
+            .arg(p.n)
+            .build()
+            .unwrap()
+            .enq()
+            .unwrap();
     };
 
     let hess = |phi: &Array<'_>,
@@ -233,10 +224,6 @@ pub fn condensate(p: Parameters) {
 
     // ------------------------------------------------------------------------- //
 
-    g.queue.finish().unwrap();
-    println!("Initialization complete. (fake)");
-    //let pb = ProgressBar::new(p.niter);
-
     let instant = Instant::now();
     let mut k = 0;
     let mut steps_below_precision = 0;
@@ -248,7 +235,7 @@ pub fn condensate(p: Parameters) {
     let mut p_times_rnm1 = phi.clone();
     let mut pnm1 = phi.clone();
     let mut now = Instant::now();
-    let iter = 100;
+    let iter = 500;
 
     while k < p.niter && steps_below_precision < 10 {
         k += 1;
@@ -269,32 +256,29 @@ pub fn condensate(p: Parameters) {
         builder.fft(&temphat.buffer, &p_times_rn.buffer, 1);
         let p_times_rn = p_times_rn * &prec;
 
-        let mut mybeta = f64::max(
+        let mybeta = f64::max(
             0.0,
             scal(&(r.clone() + &(rnm1.clone() * -1.0)), &p_times_rn) / scal(&rnm1, &p_times_rnm1),
         );
-        if k == 1 {
-            mybeta = 0f64;
-        }
 
         let descent_direction = p_times_rn.clone() * -1.0 + &(pnm1 * mybeta);
         let temp_scal = -scal(&descent_direction, &phi);
 
         // p := proj_descent_direction
-        let p = descent_direction + &(phi.clone() * temp_scal);
+        let pdd = descent_direction + &(phi.clone() * temp_scal);
 
         // Def previous variables
         rnm1 = r;
         p_times_rnm1 = p_times_rn;
-        pnm1 = p.clone();
+        pnm1 = pdd.clone();
 
-        let (dxp, dyp, lapp) = differentiate(&p);
-        let temp_hess = hess(&phi, &p, &dxp, &dyp, &lapp);
-        let normp = norm2(p.clone());
-        let p_normed = p.clone() * (1.0 / normp);
+        let (dxp, dyp, lapp) = differentiate(&pdd);
+        let temp_hess = hess(&phi, &pdd, &dxp, &dyp, &lapp);
+        let normp = norm2(pdd.clone());
+        let p_normed = pdd.clone() * (1.0 / normp);
         let denominator = temp_hess - lambdan * normp * normp;
         if denominator > 0.0 {
-            theta = -2.0 * scal(&hphi, &p) * normp / denominator;
+            theta = -2.0 * scal(&hphi, &pdd) * normp / denominator;
         } else {
             theta *= 1.5;
         }
@@ -336,7 +320,6 @@ pub fn condensate(p: Parameters) {
         }
     }
 
-    g.queue.finish().unwrap();
     println!();
     println!("Loop time: {:?}", instant.elapsed());
 
@@ -345,7 +328,7 @@ pub fn condensate(p: Parameters) {
     utils::plot_from_gpu(&phi, format!("archive/{}.png", name).as_str());
     println!(
         "End l2 norm: {}",
-        utils::l2_norm(&get_from_gpu(&phi.buffer), p.dx)
+        utils::l2_norm(&get_from_gpu(&phi), p.dx)
     );
 
     app.delete();

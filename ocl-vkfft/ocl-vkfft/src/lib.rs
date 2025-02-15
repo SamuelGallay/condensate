@@ -81,6 +81,5 @@ impl<'a> Builder<'a> {
     pub fn fft(&self, inbuffer: &Buffer<Cplx>, outbuffer: &Buffer<Cplx>, dir: i32) -> () {
         let p = Params::new(self.queue, inbuffer, outbuffer);
         append(self.app, dir, &p);
-        self.queue.finish().unwrap();
     }
 }

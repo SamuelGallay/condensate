@@ -93,6 +93,5 @@ pub fn test(p: Parameters) {
             .build()
             .unwrap();
         kernel.enq().unwrap();
-        gpu.queue.finish().unwrap();
     }
 }
