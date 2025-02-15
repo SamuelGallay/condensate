@@ -170,7 +170,6 @@ impl<'a> Mul<f64> for Array<'a> {
 impl<'a> Mul<&Self> for Array<'a> {
     type Output = Array<'a>;
     fn mul(self, other: &Self) -> Self::Output {
-        //let out = self.gpu.new_array(self.size);
         unsafe {
             ocl::Kernel::builder()
                 .program(&self.gpu.program)
@@ -189,14 +188,12 @@ impl<'a> Mul<&Self> for Array<'a> {
         }
         self.gpu.queue.finish().unwrap();
         self
-        //return out;
     }
 }
 
 impl<'a> Add<&Self> for Array<'a> {
     type Output = Array<'a>;
     fn add(self, other: &Self) -> Self::Output {
-        //let out = self.gpu.new_array(self.size);
         unsafe {
             ocl::Kernel::builder()
                 .program(&self.gpu.program)
@@ -215,6 +212,5 @@ impl<'a> Add<&Self> for Array<'a> {
         }
         self.gpu.queue.finish().unwrap();
         self
-        //return out;
     }
 }

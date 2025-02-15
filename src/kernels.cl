@@ -87,11 +87,12 @@ __kernel void scal(__global double2* a, __global double2* b, __global double2* o
 
 
 
-__kernel void energy(__global double2* phi,  __global double2* dxphi,  __global double2* dyphi, __global double2* out, double beta, double omega, double L, ulong N) {
+__kernel void energy(__global double2* phi,  __global double2* dxphi,  __global double2* dyphi, __global double2* out, struct Params params) {
     int i = get_global_id(0);
     int j = get_global_id(1);
-    int k = i*N+j;
-    double dx = L / N;
+    int k = i*params.n+j;
+    double L = params.length;
+    double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
     double v = x*x + y*y;
@@ -103,17 +104,18 @@ __kernel void energy(__global double2* phi,  __global double2* dxphi,  __global 
     double s = 0;
     s += 0.5f * (mod2(dxp) + mod2(dyp));
     s += v * mod2(p);
-    s += beta/2 * mod2(p) * mod2(p);
-    s += omega * mul(p, conj(x*dyp-y*dxp)).y;
+    s += params.beta/2 * mod2(p) * mod2(p);
+    s += params.omega * mul(p, conj(x*dyp-y*dxp)).y;
     
     out[k] = (double2)(s, 0);
 }
 
-__kernel void alpha(__global double2* phi,  __global double2* dxphi,  __global double2* dyphi, __global double2* out, double beta, double L, ulong N) {
+__kernel void alpha(__global double2* phi,  __global double2* dxphi,  __global double2* dyphi, __global double2* out, struct Params params) {
     int i = get_global_id(0);
     int j = get_global_id(1);
-    int k = i*N+j;
-    double dx = L / N;
+    int k = i*params.n+j;
+    double L = params.length;
+    double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
     double v = x*x + y*y;
@@ -125,16 +127,17 @@ __kernel void alpha(__global double2* phi,  __global double2* dxphi,  __global d
     double s = 0;
     s += 0.5f * (mod2(dxp) + mod2(dyp));
     s += v * mod2(p);
-    s += beta * mod2(p) * mod2(p);
+    s += params.beta * mod2(p) * mod2(p);
     
     out[k] = (double2)(s, 0);
 }
 
-__kernel void hphif(__global double2* phi, __global double2* ff, __global double2* dxff,  __global double2* dyff, __global double2* lapff, __global double2* out, double beta, double omega, double L, ulong N) {
+__kernel void hphif(__global double2* phi, __global double2* ff, __global double2* dxff,  __global double2* dyff, __global double2* lapff, __global double2* out, struct Params params) {
     int i = get_global_id(0);
     int j = get_global_id(1);
-    int k = i*N+j;
-    double dx = L / N;
+    int k = i*params.n+j;
+    double L = params.length;
+    double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
     double v = x*x + y*y;
@@ -148,15 +151,17 @@ __kernel void hphif(__global double2* phi, __global double2* ff, __global double
     double2 s = 0;
     s -= 0.5f * lapf;
     s += v * f;
-    s += beta * mod2(p) * f;
-    s += omega * mul((double2)(0, 1.0f), x*dyf - y*dxf);
+    s += params.beta * mod2(p) * f;
+    s += params.omega * mul((double2)(0, 1.0f), x*dyf - y*dxf);
     
     out[k] = s;
 }
 
-__kernel void differentiate(__global double2* phi,  __global double2* dx_phi,  __global double2* dy_phi, __global double2* lap_phi, double L, ulong N) {
+__kernel void differentiate(__global double2* phi,  __global double2* dx_phi,  __global double2* dy_phi, __global double2* lap_phi, struct Params params) {
     int i = get_global_id(0);
     int j = get_global_id(1);
+    int N = params.n;
+    double L = params.length;
     double freqx = (2.0 * M_PI_F / L) * ((double)i - (double)N * (2*i >= N));
     double freqy = (2.0 * M_PI_F / L) * ((double)j - (double)N * (2*j >= N));
     double2 p = phi[i*N+j];
