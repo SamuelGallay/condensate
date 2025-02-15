@@ -13,7 +13,7 @@ pub type Cplx = ocl::prm::Double2;
 pub struct Array<'a> {
     pub buffer: Buffer<Cplx>,
     pub gpu: &'a Gpu,
-    pub size: usize,
+    pub size: u64,
     pub allocator: &'a Allocator<'a>,
     pub index_in_allocator: usize,
 }
@@ -31,7 +31,7 @@ impl<'a> Clone for Array<'a> {
         let out = self.allocator.new_array();
         self.buffer.copy(&out.buffer, None, None).enq().unwrap();
         self.gpu.queue.finish().unwrap();
-        return out;
+        out
     }
 }
 
@@ -44,7 +44,7 @@ impl<'a> Drop for Array<'a> {
 
 impl<'a> Stuff for Array<'a> {
     fn sum(self) -> Complex64 {
-        return unsafe { sum::sum(self.gpu, &self.buffer, self.size * self.size) };
+        unsafe { sum::sum(self.gpu, &self.buffer, self.size * self.size) }
     }
 
     fn conj(self) -> Self {
@@ -64,7 +64,7 @@ impl<'a> Stuff for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
     }
 
     fn abs_squared(self) -> Self {
@@ -83,7 +83,7 @@ impl<'a> Stuff for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
     }
     fn inv_sqrt(self) -> Self {
         unsafe {
@@ -101,7 +101,7 @@ impl<'a> Stuff for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
     }
 }
 
@@ -125,14 +125,14 @@ impl<'a> Mul<Cplx> for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
     }
 }
 
 impl<'a> Add<f64> for Array<'a> {
     type Output = Array<'a>;
     fn add(self, scalar: f64) -> Self::Output {
-        return self + Cplx::new(scalar, 0.0);
+        self + Cplx::new(scalar, 0.0)
     }
 }
 
@@ -156,14 +156,14 @@ impl<'a> Add<Cplx> for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
     }
 }
 
 impl<'a> Mul<f64> for Array<'a> {
     type Output = Array<'a>;
     fn mul(self, scalar: f64) -> Self::Output {
-        return self * Cplx::new(scalar, 0.0);
+        self * Cplx::new(scalar, 0.0)
     }
 }
 
@@ -188,7 +188,7 @@ impl<'a> Mul<&Self> for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
         //return out;
     }
 }
@@ -214,7 +214,7 @@ impl<'a> Add<&Self> for Array<'a> {
                 .unwrap();
         }
         self.gpu.queue.finish().unwrap();
-        return self;
+        self
         //return out;
     }
 }

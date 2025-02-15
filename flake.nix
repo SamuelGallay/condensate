@@ -1,14 +1,19 @@
 {
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
-      pkgs = import nixpkgs { system = "x86_64-linux"; config.allowUnfree = true; };
-    in  {
-    devShell.x86_64-linux =
-      pkgs.mkShell {
-        buildInputs = with pkgs; [ 
+      pkgs = import nixpkgs {
+        system = "x86_64-linux";
+        config.allowUnfree = true;
+      };
+    in
+    {
+      devShell.x86_64-linux = pkgs.mkShell {
+        buildInputs = with pkgs; [
           opencl-headers
           ocl-icd
           cargo
+          clippy
           cargo-flamegraph
           clang
           fontconfig

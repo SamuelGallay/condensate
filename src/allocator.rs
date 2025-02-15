@@ -4,13 +4,13 @@ use std::cell::RefCell;
 
 pub struct Allocator<'a> {
     gpu: &'a Gpu,
-    n: usize,
+    n: u64,
     memory: RefCell<Vec<ocl::Buffer<Cplx>>>,
     free: RefCell<Vec<usize>>,
 }
 
 impl<'a> Allocator<'a> {
-    pub fn new(gpu: &'a Gpu, n: usize) -> Self {
+    pub fn new(gpu: &'a Gpu, n: u64) -> Self {
         let mut allo = Self {
             gpu,
             n,
@@ -21,7 +21,7 @@ impl<'a> Allocator<'a> {
         for _ in 0..25 {
             allo.allocate_new();
         }
-        return allo;
+        allo
     }
 
     pub fn get_free_len(&self) -> usize {
@@ -33,7 +33,7 @@ impl<'a> Allocator<'a> {
         self.free.borrow_mut().push(i);
         let buffer = ocl::Buffer::<Cplx>::builder()
             .queue(self.gpu.queue.clone())
-            .len(self.n * self.n)
+            .len((self.n * self.n) as usize)
             .build()
             .unwrap();
         self.memory.borrow_mut().push(buffer);
@@ -62,18 +62,18 @@ impl<'a> Allocator<'a> {
         
         let buffer = ocl::Buffer::<Cplx>::builder()
             .queue(self.gpu.queue.clone())
-            .len(self.n * self.n)
+            .len((self.n * self.n) as usize)
             .build()
             .unwrap();
 
 
-        return array::Array {
+        array::Array {
             buffer,
             gpu: self.gpu,
             size: self.n,
             allocator: self,
             index_in_allocator,
-        };
+        }
     }
 
     pub fn set_free(&self, i: usize) {

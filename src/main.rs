@@ -13,7 +13,7 @@ use std::fs;
 struct Cli {
     /// The space grid size
     #[arg(short, long)]
-    n: Option<usize>,
+    n: Option<u64>,
 
     /// The number of iterations
     #[arg(short, long)]
@@ -44,7 +44,7 @@ fn main() {
     let cli = Cli::parse();
     //println!("{:?}", cli.n);
     let mut p = Parameters {
-        n: cli.n.unwrap_or(usize::pow(2, 8)),
+        n: cli.n.unwrap_or(u64::pow(2, 8)),
         length: cli.length.unwrap_or(20.0),
         omega: cli.omega.unwrap_or(1.3),
         beta: cli.beta.unwrap_or(2000.0),
@@ -55,7 +55,7 @@ fn main() {
     p.dx = p.length / p.n as f64;
     println!("{:?}", p);
 
-    gpu::test();
+    gpu::test(p.clone());
     condensate::condensate(p);
     //sum::benchmark();
 }

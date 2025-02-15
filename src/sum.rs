@@ -11,6 +11,7 @@ use crate::allocator::Allocator;
 
 const SRC: &str = include_str!("kernels.cl");
 
+/// # Safety
 pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> Complex64 {
     assert!(length.is_power_of_two());
     let n = u64::ilog2(length);
@@ -37,16 +38,17 @@ pub unsafe fn inplace(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> 
         .enq()
         .unwrap();
     g.queue.finish().unwrap();
-    return Complex64::new(temp[0][0], temp[0][1]);
+    Complex64::new(temp[0][0], temp[0][1])
 }
 
-pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: usize) -> Complex64 {
+/// # Safety
+pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: u64) -> Complex64 {
     assert!(length.is_power_of_two());
     //let n = u64::ilog2(length);
     //assert_eq!(2u64.pow(n), length);
     //println!("Length {}", length);
     const DIVISOR: usize = 16;
-    let mut current_length = length;
+    let mut current_length = length as usize;
     while current_length % DIVISOR == 0 {
         current_length /= DIVISOR;
         ocl::Kernel::builder()
@@ -72,15 +74,15 @@ pub unsafe fn sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, length: usize) -> Co
         .unwrap();
     g.queue.finish().unwrap();
     let mut s = Complex64::zero();
-    for i in 0..(current_length) {
-        s += Complex64::new(temp[i][0], temp[i][1]);
+    for c in temp.iter().take(current_length) {
+        s += Complex64::new(c[0], c[1]);
     }
-    return s;
+    s
 }
 
 pub fn fourier_sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, fftapp: &ocl_vkfft::App) -> Complex64 {
-    let builder = ocl_vkfft::Builder::new(&fftapp, &g.queue);
-    builder.fft(&buffer, &buffer, -1);
+    let builder = ocl_vkfft::Builder::new(fftapp, &g.queue);
+    builder.fft(buffer, buffer, -1);
     let mut temp = [Cplx::zero()];
     buffer
         .read(temp.as_mut_slice())
@@ -88,12 +90,12 @@ pub fn fourier_sum(g: &gpu::Gpu, buffer: &ocl::Buffer<Cplx>, fftapp: &ocl_vkfft:
         .enq()
         .unwrap();
     g.queue.finish().unwrap();
-    return Complex64::new(temp[0][0], temp[0][1]);
+    Complex64::new(temp[0][0], temp[0][1])
 }
 
 pub fn benchmark() {
     let mut rng = rand::thread_rng();
-    let n = 2usize.pow(12);
+    let n = 2_u64.pow(12);
     let g = gpu::Gpu::new(SRC);
     let alloc = Allocator::new(&g, n);
     let config = ocl_vkfft_sys::VkFFTConfiguration {
@@ -109,9 +111,9 @@ pub fn benchmark() {
     };
     let fftapp = ocl_vkfft::App::new(config);
 
-    let mut cpu_data = Array2::<Complex64>::zeros((n, n));
-    for i in 0..n {
-        for j in 0..n {
+    let mut cpu_data = Array2::<Complex64>::zeros((n as usize, n as usize));
+    for i in 0..(n as usize) {
+        for j in 0..(n as usize) {
             cpu_data[[i, j]] = Complex64::new(rng.gen::<f64>(), rng.gen::<f64>());
         }
     }

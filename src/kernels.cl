@@ -15,6 +15,20 @@ inline double2 mul(double2 a, double2 b){
 }
 
 
+struct Params {
+    ulong n;
+    ulong niter;
+    double length;
+    double omega;
+    double beta;
+    double gamma;
+    double dx;
+};
+
+__kernel void read_params(struct Params p){
+    printf("This is my omega: %f\n", p.omega);
+}
+
 __kernel void mul_vect_scalar(__global double2* vect,  double2 scalar,  __global double2* out, ulong N) {
     int i = get_global_id(0);
     int j = get_global_id(1);

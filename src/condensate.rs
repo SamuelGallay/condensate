@@ -5,24 +5,26 @@ extern crate ocl_vkfft;
 extern crate ocl_vkfft_sys;
 extern crate rand;
 
+use crate::allocator::Allocator;
 use crate::array::Array;
+use crate::array::Cplx;
 use crate::array::Stuff;
 use crate::gpu::Gpu;
 use crate::utils;
 use crate::utils::get_from_gpu;
-use crate::array::Cplx;
-use crate::allocator::Allocator;
 
 //use indicatif::ProgressBar;
 use ocl::ocl_core::ClDeviceIdPtr;
 use ocl_vkfft_sys::VkFFTConfiguration;
 use std::time::Instant;
+use ocl::OclPrm;
 
 const SRC: &str = include_str!("kernels.cl");
 
-#[derive(Debug)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Parameters {
-    pub n: usize,
+    pub n: u64,
     pub niter: u64,
     pub length: f64,
     pub omega: f64,
@@ -30,8 +32,10 @@ pub struct Parameters {
     pub gamma: f64,
     pub dx: f64,
 }
+unsafe impl OclPrm for Parameters {}
 
-pub fn condensate(p: Parameters) -> () {
+
+pub fn condensate(p: Parameters) {
     ocl_vkfft_sys::say_hello();
     let name = format!(
         "{}-{}-{}-{}-{}-{}",
@@ -60,8 +64,8 @@ pub fn condensate(p: Parameters) -> () {
         .unwrap();
 
     let mut s = Cplx::new(0.0, 0.0);
-    for i in 0..p.n {
-        for j in 0..p.n {
+    for i in 0..(p.n as usize) {
+        for j in 0..(p.n as usize) {
             s += phi0[[i, j]];
         }
     }
@@ -70,11 +74,11 @@ pub fn condensate(p: Parameters) -> () {
 
     let config = VkFFTConfiguration {
         FFTdim: 2,
-        size: [p.n as u64, p.n as u64, 0, 0],
+        size: [p.n, p.n, 0, 0],
         numberBatches: 1,
         device: &mut g.device.as_ptr(),
         context: &mut g.context.as_ptr(),
-        bufferSize: &mut (16 * (p.n * p.n) as u64), // 16 = sizeof(Complex<f64>)
+        bufferSize: &mut (16 * p.n * p.n), // 16 = sizeof(Complex<f64>)
         normalize: 1,
         isInputFormatted: 1,
         doublePrecision: 1,
@@ -88,12 +92,12 @@ pub fn condensate(p: Parameters) -> () {
 
     let kernel = |name: &str| {
         let mut kernel = ocl::Kernel::builder();
-            kernel
-                .program(&g.program)
-                .queue(g.queue.clone())
-                .name(name)
-                .global_work_size([p.n, p.n]);
-        return kernel;
+        kernel
+            .program(&g.program)
+            .queue(g.queue.clone())
+            .name(name)
+            .global_work_size([p.n, p.n]);
+        kernel
     };
 
     let scal = |a: &Array<'_>, b: &Array<'_>| -> f64 {
@@ -103,20 +107,17 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(&a.buffer)
                 .arg(&b.buffer)
                 .arg(&out.buffer)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
                 .unwrap();
         }
         g.queue.finish().unwrap();
-        return out.sum().re * p.dx * p.dx;
+        out.sum().re * p.dx * p.dx
     };
 
-    let energy = |phi: &Array<'_>,
-                  dxphi: &Array<'_>,
-                  dyphi: &Array<'_>|
-     -> f64 {
+    let energy = |phi: &Array<'_>, dxphi: &Array<'_>, dyphi: &Array<'_>| -> f64 {
         let out = alloc.new_array();
         unsafe {
             kernel("energy")
@@ -127,20 +128,17 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(p.beta)
                 .arg(p.omega)
                 .arg(p.length)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
                 .unwrap();
         }
         g.queue.finish().unwrap();
-        return out.sum().re * p.dx * p.dx;
+        out.sum().re * p.dx * p.dx
     };
 
-    let alpha = |phi: &Array<'_>,
-                 dxphi: &Array<'_>,
-                 dyphi: &Array<'_>|
-     -> f64 {
+    let alpha = |phi: &Array<'_>, dxphi: &Array<'_>, dyphi: &Array<'_>| -> f64 {
         let out = alloc.new_array();
         unsafe {
             kernel("alpha")
@@ -150,14 +148,14 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(&out.buffer)
                 .arg(p.beta)
                 .arg(p.length)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
                 .unwrap();
         }
         g.queue.finish().unwrap();
-        return out.sum().re * p.dx * p.dx;
+        out.sum().re * p.dx * p.dx
     };
 
     let hphif = |phi: &Array<'_>,
@@ -178,21 +176,17 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(p.beta)
                 .arg(p.omega)
                 .arg(p.length)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
                 .unwrap();
         }
         g.queue.finish().unwrap();
-        return out;
+        out
     };
 
-    let differentiate = |f: &Array<'_>| -> (
-        Array<'_>,
-        Array<'_>,
-        Array<'_>,
-    ) {
+    let differentiate = |f: &Array<'_>| -> (Array<'_>, Array<'_>, Array<'_>) {
         let fhat = alloc.new_array();
         builder.fft(&f.buffer, &fhat.buffer, -1);
 
@@ -206,7 +200,7 @@ pub fn condensate(p: Parameters) -> () {
                 .arg(&dyf.buffer)
                 .arg(&lapf.buffer)
                 .arg(p.length)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
@@ -217,16 +211,16 @@ pub fn condensate(p: Parameters) -> () {
         builder.fft(&dyf.buffer, &dyf.buffer, 1);
         builder.fft(&lapf.buffer, &lapf.buffer, 1);
 
-        return (dxf, dyf, lapf);
+        (dxf, dyf, lapf)
     };
 
-    let invamlap2 = |fhat: &Array<'_>, a: f64| -> () {
+    let invamlap2 = |fhat: &Array<'_>, a: f64| {
         unsafe {
             kernel("invamlap2")
                 .arg(&fhat.buffer)
                 .arg(a)
                 .arg(p.length)
-                .arg(p.n as u64)
+                .arg(p.n)
                 .build()
                 .unwrap()
                 .enq()
@@ -241,13 +235,10 @@ pub fn condensate(p: Parameters) -> () {
                 dyf: &Array<'_>,
                 lapf: &Array<'_>|
      -> f64 {
-        return 2.0
-            * (scal(f, &hphif(phi, f, dxf, dyf, lapf))
-                + p.beta * scal(&(phi.clone() * phi), &(f.clone() * f)));
+        2.0 * (scal(f, &hphif(phi, f, dxf, dyf, lapf))
+            + p.beta * scal(&(phi.clone() * phi), &(f.clone() * f)))
     };
-    let norm2 = |phi: Array<'_>| -> f64 {
-        return f64::sqrt(phi.abs_squared().sum().re * p.dx * p.dx);
-    };
+    let norm2 = |phi: Array<'_>| -> f64 { f64::sqrt(phi.abs_squared().sum().re * p.dx * p.dx) };
 
     // ------------------------------------------------------------------------- //
 
@@ -266,6 +257,7 @@ pub fn condensate(p: Parameters) -> () {
     let mut p_times_rnm1 = phi.clone();
     let mut pnm1 = phi.clone();
     let mut now = Instant::now();
+    let iter = 100;
 
     while k < p.niter && steps_below_precision < 10 {
         k += 1;
@@ -335,23 +327,26 @@ pub fn condensate(p: Parameters) -> () {
             steps_below_precision = 0;
         }
 
-        if k % 100 == 0 {
+        if k % iter == 0 {
             utils::plot_from_gpu(&phi, format!("temp/{}.png", k).as_str());
             utils::plot_from_gpu(&phi, "plot/latest.png");
-            println!("");
+            println!();
             println!("Iteration : {}", k);
             println!("Energy : {}", e);
             println!("Delta: {:?}", energy_delta);
             println!("Norm2 : {}", norm2(phi.clone()));
             println!("Divisions : {}", divisions);
             divisions = 0;
-            println!("Elapsed: {:.2?}", now.elapsed());
+            println!(
+                "Elapsed: {:.2?} for 100 steps.",
+                now.elapsed().mul_f64(100.0 / (iter as f64))
+            );
             now = Instant::now();
         }
-        //pb.inc(1);
     }
 
     g.queue.finish().unwrap();
+    println!();
     println!("Loop time: {:?}", instant.elapsed());
 
     // ------------------------------------------------------------------------- //
