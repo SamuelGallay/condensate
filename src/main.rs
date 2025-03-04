@@ -1,13 +1,14 @@
+pub mod allocator;
 pub mod array;
 pub mod condensate;
 pub mod gpu;
 pub mod sum;
 pub mod utils;
-pub mod allocator;
 
 use crate::condensate::Parameters;
 use clap::Parser;
 use std::fs;
+use std::string::String;
 
 #[derive(Parser)]
 struct Cli {
@@ -34,6 +35,18 @@ struct Cli {
     /// Gamma, the shape of the trap
     #[arg(short, long)]
     gamma: Option<f64>,
+
+    /// Precision
+    #[arg(short, long)]
+    precision: Option<f64>,
+
+    /// Title  
+    #[arg(short, long)]
+    title: Option<String>,
+
+    /// Toggle the gradient flow version
+    #[arg(long)]
+    gradientflow: bool,
 }
 
 fn main() {
@@ -50,12 +63,17 @@ fn main() {
         beta: cli.beta.unwrap_or(2000.0),
         gamma: cli.gamma.unwrap_or(1.0),
         niter: cli.iter.unwrap_or(1000),
+        precision: cli.precision.unwrap_or(10.0),
         dx: 0.0,
     };
     p.dx = p.length / p.n as f64;
     println!("{:?}", p);
 
     gpu::test(p);
-    condensate::condensate(p);
+    if cli.gradientflow {
+        condensate::old_condensate(p, cli.title);
+    } else {
+        condensate::condensate(p, cli.title);
+    }
     //sum::benchmark();
 }

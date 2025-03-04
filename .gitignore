@@ -8,3 +8,6 @@ ocl-vkfft/a.out
 ocl-vkfft/foo.o
 plot
 videos
+beta-simulations.sh
+omega-simulations.sh
+*.zip

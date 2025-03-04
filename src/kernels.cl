@@ -23,6 +23,7 @@ struct Params {
     double beta;
     double gamma;
     double dx;
+    double _precision;
 };
 
 __kernel void read_params(struct Params p){
@@ -95,7 +96,7 @@ __kernel void energy(__global double2* phi,  __global double2* dxphi,  __global 
     double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
-    double v = x*x + y*y;
+    double v = 0.5*(x*x + params.gamma*y*y);
 
     double2 p = phi[k];
     double2 dxp = dxphi[k];
@@ -118,7 +119,7 @@ __kernel void alpha(__global double2* phi,  __global double2* dxphi,  __global d
     double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
-    double v = x*x + y*y;
+    double v = 0.5*(x*x + params.gamma*y*y);
 
     double2 p = phi[k];
     double2 dxp = dxphi[k];
@@ -140,7 +141,7 @@ __kernel void hphif(__global double2* phi, __global double2* ff, __global double
     double dx = L / params.n;
     double x = i*dx - L/2;
     double y = j*dx - L/2;
-    double v = x*x + y*y;
+    double v = 0.5*(x*x + params.gamma*y*y);
 
     double2 p = phi[k];
     double2 f = ff[k];
@@ -192,7 +193,6 @@ __kernel void sum_inplace(__global double2* buffer, ulong out_size) {
     buffer[i] += buffer[i + out_size] ;
 }
 
-// Actually there is no SIMD at all...
 __kernel void fast_sum(__global double2* buffer, ulong out_size) {
     int i = get_global_id(0);
     double2 s = buffer[i];
@@ -213,3 +213,49 @@ __kernel void fast_sum(__global double2* buffer, ulong out_size) {
     s+= buffer[i + 15*out_size];
     buffer[i] = s;
 }
+
+//------------------------------------------------------------------------------------//
+//--------------------------------Old Method------------------------------------------//
+//------------------------------------------------------------------------------------//
+
+__kernel void diffusion(__global double2* phi,  __global double2* dx_phi,  __global double2* dy_phi, ulong N, double L, double dt) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    double freqx = (2.0 * M_PI_F / L) * ((double)i - (double)N * (2*i >= N));
+    double freqy = (2.0 * M_PI_F / L) * ((double)j - (double)N * (2*j >= N));
+    double scalar = exp(-0.5 * (freqx*freqx + freqy*freqy) * dt);
+    double phix = phi[i*N +j].x * scalar;
+    double phiy = phi[i*N +j].y * scalar;
+    
+    phi[i*N+j].x = phix;
+    phi[i*N+j].y = phiy;
+    dx_phi[i*N+j].x = -phiy * freqx;
+    dx_phi[i*N+j].y =  phix * freqx;
+    dy_phi[i*N+j].x = -phiy * freqy;
+    dy_phi[i*N+j].y =  phix * freqy;
+}
+
+__kernel void rotation(__global double2* phi, __global double2* dx_phi, __global double2* dy_phi, ulong N, double L, double omega, double beta, double gamma, double dt) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    
+    double dx = L / N;
+    double x = i*dx - L/2;
+    double y = j*dx - L/2;
+    double phix = phi[i*N +j].x; 
+    double phiy = phi[i*N +j].y;
+
+    phix += omega * (x*dy_phi[i*N+j].y - y*dx_phi[i*N+j].y) * dt;
+    phiy -= omega * (x*dy_phi[i*N+j].x - y*dx_phi[i*N+j].x) * dt;
+    
+    double phi2 = phix*phix + phiy*phiy;
+    double v2 = 0.5*(x*x + gamma*y*y);
+    
+    phix *= exp(-dt * (v2 + beta*phi2)); 
+    phiy *= exp(-dt * (v2 + beta*phi2)); 
+
+    phi[i*N+j].x = phix; 
+    phi[i*N+j].y = phiy; 
+}
+
+

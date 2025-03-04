@@ -6,6 +6,7 @@ use core::f64;
 use image::ImageBuffer;
 use ndarray::Array2;
 use noise::{Fbm, NoiseFn, Perlin};
+use std::usize;
 //use num::complex::{Complex, ComplexFloat};
 use crate::array::Cplx;
 use num::complex::Complex64;
@@ -58,10 +59,12 @@ pub fn fftfreq(n: usize, l: f64) -> Vec<f64> {
 pub fn get_from_gpu(a: &array::Array) -> Array2<Complex64> {
     let n = a.buffer.len().sqrt();
     let mut cpu_data = Array2::<Cplx>::zeros((n, n));
-    a.buffer.read(cpu_data.as_slice_mut().unwrap()).enq().unwrap();
+    a.buffer
+        .read(cpu_data.as_slice_mut().unwrap())
+        .enq()
+        .unwrap();
     a.gpu.queue.finish().unwrap();
     unsafe { std::mem::transmute::<Array2<Cplx>, Array2<Complex64>>(cpu_data) }
-    
 }
 
 pub fn max(arr: &Array2<f64>) -> f64 {
@@ -82,7 +85,9 @@ pub fn image_from_array(cpu_data: &Array2<f64>) -> ImageBuffer<image::Rgb<u8>, V
         //.html_colors(&["black", "red", "orange", "yellow"])
         //.html_colors(&["black", "red", "yellow"])
         //.html_colors(&["#000004", "#170b3a", "#420a68", "#6b176e", "#932667", "#bb3654", "#dd513a", "#f3771a", "#fca50a", "#f6d644", "#fcffa4"])
- .html_colors(&["#000000", "#1e0c03", "#a91b0a", "#fc0201", "#ff1000", "#ff7800", "#ffee00", "#ffff00"])
+        .html_colors(&[
+            "#000000", "#1e0c03", "#a91b0a", "#fc0201", "#ff1000", "#ff7800", "#ffee00", "#ffff00",
+        ])
         .build::<colorgrad::CatmullRomGradient>()
         .unwrap();
     //let grad = colorgrad::preset::inferno();
@@ -100,7 +105,7 @@ pub fn plot_array(cpu_data: &Array2<f64>, name: &str) {
 }
 
 pub fn plot_from_gpu(a: &array::Array, name: &str) {
-    let cpu_data = get_from_gpu(a).mapv(|x| x.abs()*x.abs());
+    let cpu_data = get_from_gpu(a).mapv(|x| x.abs() * x.abs());
     plot_array(&cpu_data, name);
 }
 
@@ -133,14 +138,32 @@ pub fn init(n: u64, eps0: f64, l: f64) -> Array2<Cplx> {
     unsafe { std::mem::transmute::<Array2<Complex64>, Array2<Cplx>>(normalized) }
 }
 
-pub fn vector_field(n: u64, l: f64) -> Array2<Cplx> {
+pub fn smooth_init(n: u64, eps0: f64, l: f64) -> Array2<Cplx> {
     let mut a = Array2::<Complex64>::zeros((n as usize, n as usize));
     let dx = l / (n as f64);
     for i in 0..(n as usize) {
         for j in 0..(n as usize) {
             let x = (i as f64) * dx - l / 2.0;
             let y = (j as f64) * dx - l / 2.0;
-            a[[i, j]].re = x * x + y * y;
+            a[[i, j]].re = 1f64 / f64::sqrt(PI * eps0) * f64::exp(-(x * x + y * y) / (2.0 * eps0))
+                + 1f64 / f64::sqrt(PI * eps0) * x / l * f64::exp(-(x * x + y * y) / (2.0 * eps0));
+            a[[i, j]].im =
+                1f64 / f64::sqrt(PI * eps0) * y / l * f64::exp(-(x * x + y * y) / (2.0 * eps0));
+        }
+    }
+    let norm = l2_norm(&a, dx);
+    let normalized = a / norm;
+    unsafe { std::mem::transmute::<Array2<Complex64>, Array2<Cplx>>(normalized) }
+}
+
+pub fn vector_field(n: u64, l: f64, gamma: f64) -> Array2<Cplx> {
+    let mut a = Array2::<Complex64>::zeros((n as usize, n as usize));
+    let dx = l / (n as f64);
+    for i in 0..(n as usize) {
+        for j in 0..(n as usize) {
+            let x = (i as f64) * dx - l / 2.0;
+            let y = (j as f64) * dx - l / 2.0;
+            a[[i, j]].re = 0.5 * (x * x + gamma * y * y);
             a[[i, j]].im = 0f64;
         }
     }
